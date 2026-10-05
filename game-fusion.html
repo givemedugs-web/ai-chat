@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Fusion — Combine Two Games Into One</title>
+<style>
+  :root {
+    --bg: #0f1220;
+    --panel: #191e33;
+    --panel2: #222845;
+    --accent: #7c5cff;
+    --accent2: #ff5c8a;
+    --ok: #3ddc97;
+    --warn: #ffb347;
+    --text: #e8eaf6;
+    --dim: #9aa0c3;
+    --mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 20% -10%, #232a52 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, Arial, sans-serif;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  header { max-width: 1280px; margin: 0 auto 18px; }
+  h1 {
+    font-size: 28px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: inline-block;
+  }
+  .sub { color: var(--dim); margin-top: 4px; font-size: 14px; }
+  .wrap { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 420px 1fr; gap: 18px; }
+  @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid #2b3255; border-radius: 14px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--dim); }
+  .drop {
+    border: 2px dashed #3a4370; border-radius: 10px; padding: 14px; text-align: center;
+    cursor: pointer; transition: .15s; color: var(--dim); font-size: 13px; margin-bottom: 10px;
+  }
+  .drop:hover, .drop.dragover { border-color: var(--accent); color: var(--text); background: rgba(124,92,255,.08); }
+  .drop.loaded { border-color: var(--ok); color: var(--ok); border-style: solid; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid #3a4370;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border: none; color: #fff; font-weight: 600; padding: 10px 18px;
+  }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  select, input[type=text] {
+    background: #12162a; color: var(--text); border: 1px solid #3a4370;
+    border-radius: 8px; padding: 7px 10px; font-size: 13px;
+  }
+  .mode-item { border: 1px solid #2b3255; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .mode-item.active { border-color: var(--accent); background: rgba(124,92,255,.08); }
+  .mode-item label { cursor: pointer; font-weight: 600; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+  .mode-item p { color: var(--dim); font-size: 12px; margin: 6px 0 0 24px; }
+  .mode-opts { margin: 8px 0 0 24px; display: none; }
+  .mode-item.active .mode-opts { display: block; }
+  .right-col { display: flex; flex-direction: column; }
+  .stagebar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .tabbtn.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  iframe#stage {
+    width: 100%; height: 620px; border: 1px solid #2b3255; border-radius: 12px; background: #fff;
+  }
+  textarea.code {
+    width: 100%; height: 150px; background: #12162a; color: #cfe3ff; border: 1px solid #3a4370;
+    border-radius: 10px; font-family: var(--mono); font-size: 12px; padding: 10px; resize: vertical;
+  }
+  #log {
+    background: #0b0e1c; border: 1px solid #2b3255; border-radius: 10px; padding: 10px;
+    font-family: var(--mono); font-size: 11.5px; height: 140px; overflow-y: auto; color: #b9c4ee;
+    white-space: pre-wrap;
+  }
+  #log .ok { color: var(--ok); } #log .err { color: #ff7b7b; } #log .warn { color: var(--warn); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #2b3255; color: var(--dim); }
+  .hintbox { font-size: 12px; color: var(--dim); background: #12162a; border-left: 3px solid var(--accent); padding: 8px 10px; border-radius: 0 8px 8px 0; margin-top: 8px; }
+  .hiddenfile { display: none; }
+  .scanlist { max-height: 190px; overflow-y: auto; border: 1px solid #2b3255; border-radius: 8px; padding: 6px; margin-top: 8px; background: #12162a; }
+  .scanitem { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 12px; }
+  .scanitem:hover { background: rgba(124,92,255,.12); }
+  .scanitem .path { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+  .scanbar { height: 6px; background: #2b3255; border-radius: 4px; overflow: hidden; margin-top: 8px; display: none; }
+  .scanbar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s; }
+  footer { max-width: 1280px; margin: 14px auto 0; color: #5a618a; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Game Fusion</h1>
+  <div class="sub">Combine two games into one playable fusion — everything runs locally in your browser. Your files never leave this device.</div>
+</header>
+
+<div class="wrap">
+  <!-- LEFT COLUMN: sources + modes -->
+  <div>
+    <div class="card">
+      <h2>Game A</h2>
+      <div class="drop" id="dropA">Drag &amp; drop an HTML game file here, or click to browse<br><span class="badge" id="badgeA">empty</span></div>
+      <input type="file" class="hiddenfile" id="fileA" accept=".html,.htm,.txt">
+      <div class="row" style="margin-top:6px">
+        <button class="small" id="demoA">Load demo Game A (Snake)</button>
+        <button class="small" id="clearA">Clear</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Game B</h2>
+      <div class="drop" id="dropB">Drag &amp; drop an HTML game file here, or click to browse<br><span class="badge" id="badgeB">empty</span></div>
+      <input type="file" class="hiddenfile" id="fileB" accept=".html,.htm,.txt">
+      <div class="row" style="margin-top:6px">
+        <button class="small" id="demoB">Load demo Game B (Click Frenzy)</button>
+        <button class="small" id="clearB">Clear</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fusion Mode</h2>
+      <div class="mode-item active" data-mode="split">
+        <label><input type="radio" name="mode" value="split" checked> 🪟 Split-screen side by side</label>
+        <p>Both games run next to each other in one page. Best when the two games use different controls (e.g. mouse vs. keyboard).</p>
+        <div class="mode-opts">
+          <div class="row">
+            <span style="font-size:12px;color:var(--dim)">Divider:</span>
+            <input type="range" id="splitRatio" min="20" max="80" value="50" style="flex:1">
+            <span class="badge" id="splitRatioVal">50 / 50</span>
+          </div>
+        </div>
+      </div>
+      <div class="mode-item" data-mode="tabs">
+        <label><input type="radio" name="mode" value="tabs"> 🗂 Tabbed switcher</label>
+        <p>One window with tabs to flip instantly between Game A and Game B. Only the visible tab keeps running.</p>
+      </div>
+      <div class="mode-item" data-mode="remix">
+        <label><input type="radio" name="mode" value="remix"> 🧪 Script Remix (advanced)</label>
+        <p>Inject Game B's JavaScript code into Game A's page so both scripts share one world. Try: paste a small script below that changes Game A (e.g. <code>document.body.style.background='black'</code> or overrides a variable).</p>
+        <div class="mode-opts">
+          <textarea class="code" id="remixCode" placeholder="JavaScript from / for Game B to inject into Game A…"></textarea>
+        </div>
+      </div>
+      <div class="hintbox">Tip: any single-file HTML game works (Flappy clones, 2048, breakout…). Iframes keep each game sandboxed so they can't crash each other — except in Remix mode, where you're the mad scientist.</div>
+    </div>
+
+    <div class="card">
+      <h2>Custom Labels (optional)</h2>
+      <div class="row">
+        <input type="text" id="labelA" placeholder="Game A name" style="flex:1">
+        <input type="text" id="labelB" placeholder="Game B name" style="flex:1">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🖥 Game Scanner — find games on your PC</h2>
+      <div class="row">
+        <button class="small" id="scanBtn">Scan a folder…</button>
+        <button class="small" id="scanQuickBtn">Quick scan common folders</button>
+        <span class="badge" id="scanBadge">not scanned</span>
+      </div>
+      <input type="file" id="scanDir" class="hiddenfile" webkitdirectory directory multiple>
+      <div class="row" style="margin-top:8px">
+        <button class="small" id="dlScannerBtn">⬇ Download scanner (scan-games.bat)</button>
+        <button class="small" id="libImportBtn">Import game-library.json</button>
+        <input type="file" id="libFile" class="hiddenfile" accept=".json,application/json">
+      <input type="file" id="libPickFile" class="hiddenfile" accept=".html,.htm">
+        <span class="badge" id="libBadge">no library imported</span>
+      </div>
+      <div class="hintbox" style="margin-top:6px"><b>Full-PC scan (Windows):</b> press <b>⬇ Download scanner (scan-games.bat)</b> (above) — no fusion needed. You get the scanner file directly (no zip to open, no folders). Double-click <code>scan-games.bat</code>: it is a <b>single self-contained file</b> (the scanner lives inside the .bat itself — no companion files). It detects installed games from <b>Steam, Epic Games and itch.io</b> (registry + launcher manifests) plus HTML games in Documents/Desktop/Downloads, and writes <code>game-library.json</code>. Then press \"Import game-library.json\" — every detected game appears with one-click <b>→ A / → B</b> buttons. The same scanner is also bundled inside the fused-game ZIP export. (Browsers can't read arbitrary paths, so the .bat + JSON import is how results get back into the app — everything stays local.)</div>
+      <div id="libResults"></div>
+      <div class="scanbar" id="scanBar"><div id="scanFill"></div></div>
+      <div class="hintbox" style="margin-top:8px">Your browser can only read folders you explicitly pick (sandboxed for privacy) — "Scan a folder…" opens the OS picker; everything is scanned locally, nothing is uploaded. It looks for .html/.htm files that contain game signals (&lt;canvas&gt;, &lt;script&gt;, score/game keywords), skipping node_modules and huge files.</div>
+      <div id="scanResults"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: stage -->
+  <div class="right-col">
+    <div class="card" style="flex:1">
+      <div class="stagebar">
+        <button class="primary" id="fuseBtn">🔥 Fuse &amp; Play</button>
+        <button id="tabsInStage" style="display:none"></button>
+        <span id="stageInfo" class="badge">no fusion yet</span>
+        <span style="flex:1"></span>
+        <button class="small" id="copyBtn">Copy fused HTML</button>
+        <button class="small" id="dlBtn">Download fused game</button>
+        <select id="dlFormat" title="Download format">
+          <option value="html">HTML</option>
+          <option value="zip">ZIP</option>
+        </select>
+      </div>
+      <iframe id="stage" title="Fused game stage" sandbox="allow-scripts allow-pointer-lock"></iframe>
+    </div>
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<footer>Game Fusion • part of the Universal Modder family • 100% offline, single file</footer>
+
+<script>
+"use strict";
+/* ============ state ============ */
+const state = { a: null, b: null }; // {name, html}
+let currentMode = "split";
+let lastFused = "";
+
+/* ============ helpers ============ */
+const $ = id => document.getElementById(id);
+function log(msg, cls) {
+  const el = $("log");
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ============ file loading ============ */
+function bindDrop(dropId, fileId, badgeId, slot, defaultName) {
+  const drop = $(dropId), file = $(fileId), badge = $(badgeId);
+  drop.addEventListener("click", () => file.click());
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("dragover"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+  drop.addEventListener("drop", e => {
+    e.preventDefault(); drop.classList.remove("dragover");
+    if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+  file.addEventListener("change", () => { if (file.files[0]) readFile(file.files[0]); });
+  function readFile(f) {
+    if (!/\.(html?|txt)$/i.test(f.name)) { log("Rejected '" + f.name + "' — please use an .html game file.", "err"); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      state[slot] = { name: f.name, html: String(r.result), label: defaultName };
+      drop.classList.add("loaded");
+      badge.textContent = f.name + " (" + Math.round(f.size / 1024) + " KB)";
+      log("Loaded Game " + (slot === "a" ? "A" : "B") + ": " + f.name, "ok");
+    };
+    r.onerror = () => log("Failed to read " + f.name, "err");
+    r.readAsText(f);
+  }
+}
+bindDrop("dropA", "fileA", "badgeA", "a", "Game A");
+bindDrop("dropB", "fileB", "badgeB", "b", "Game B");
+
+function clearSlot(slot) {
+  state[slot] = null;
+  const d = slot === "a" ? ["dropA","badgeA","fileA"] : ["dropB","badgeB","fileB"];
+  $(d[0]).classList.remove("loaded");
+  $(d[1]).textContent = "empty";
+  $(d[2]).value = "";
+  log("Cleared Game " + (slot === "a" ? "A" : "B"), "warn");
+}
+$("clearA").onclick = () => clearSlot("a");
+$("clearB").onclick = () => clearSlot("b");
+
+/* ============ mode selection ============ */
+document.querySelectorAll(".mode-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".mode-item").forEach(i => i.classList.remove("active"));
+    item.classList.add("active");
+    item.querySelector("input[type=radio]").checked = true;
+    currentMode = item.dataset.mode;
+  });
+});
+$("splitRatio").addEventListener("input", e => {
+  $("splitRatioVal").textContent = e.target.value + " / " + (100 - e.target.value);
+});
+
+/* ============ fusion builders ============ */
+function srcdocWrap(html) {
+  // full game HTML goes into iframe srcdoc attribute -> must escape quotes
+  return html.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+function buildSplit(a, b, ratio, la, lb) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(la)} + ${esc(lb)}</title>
+<style>html,body{margin:0;height:100%;background:#101018;font-family:system-ui,sans-serif}
+.wrap{display:flex;height:100vh;gap:4px;padding:4px;box-sizing:border-box}
+.pane{position:relative;border-radius:10px;overflow:hidden;background:#1b1b28;display:flex;flex-direction:column}
+.pane .tag{position:absolute;top:6px;left:6px;z-index:5;background:rgba(0,0,0,.55);color:#fff;
+padding:3px 10px;border-radius:20px;font-size:12px;pointer-events:none}
+.pane iframe{width:100%;height:100%;border:0;background:#fff;flex:1}</style></head>
+<body><div class="wrap">
+<div class="pane" style="flex:${ratio}"><span class="tag">${esc(la)}</span>
+<iframe srcdoc="${srcdocWrap(a)}" sandbox="allow-scripts allow-pointer-lock"></iframe></div>
+<div class="pane" style="flex:${100-ratio}"><span class="tag">${esc(lb)}</span>
+<iframe srcdoc="${srcdocWrap(b)}" sandbox="allow-scripts allow-pointer-lock"></iframe></div>
+</div></body></html>`;
+}
+function buildTabs(a, b, la, lb) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(la)} + ${esc(lb)}</title>
+<style>html,body{margin:0;height:100%;background:#101018;font-family:system-ui,sans-serif}
+.tabs{display:flex;gap:6px;padding:8px}
+.tabs button{padding:8px 22px;border:0;border-radius:8px 8px 0 0;background:#23233a;color:#aab;cursor:pointer;font-size:14px}
+.tabs button.on{background:#7c5cff;color:#fff;font-weight:700}
+iframe{width:calc(100% - 16px);height:calc(100vh - 66px);margin:0 8px 8px;border:0;border-radius:0 10px 10px 10px;background:#fff;display:none}
+iframe.show{display:block}</style></head>
+<body><div class="tabs">
+<button id="ta" class="on">${esc(la)}</button><button id="tb">${esc(lb)}</button></div>
+<iframe id="fa" class="show" srcdoc="${srcdocWrap(a)}" sandbox="allow-scripts allow-pointer-lock"></iframe>
+<iframe id="fb" srcdoc="${srcdocWrap(b)}" sandbox="allow-scripts allow-pointer-lock"></iframe>
+<script>
+var ta=document.getElementById("ta"),tb=document.getElementById("tb"),
+fa=document.getElementById("fa"),fb=document.getElementById("fb");
+ta.onclick=function(){ta.classList.add("on");tb.classList.remove("on");fa.classList.add("show");fb.classList.remove("show");};
+tb.onclick=function(){tb.classList.add("on");ta.classList.remove("on");fb.classList.add("show");fa.classList.remove("show");};
+<\/script></body></html>`;
+}
+function extractScripts(html) {
+  const out = [];
+  const closer = "<" + "/script>";
+  const lower = html.toLowerCase();
+  let pos = 0;
+  while (true) {
+    const open = lower.indexOf("<script", pos);
+    if (open < 0) break;
+    const openEnd = lower.indexOf(">", open);
+    if (openEnd < 0) break;
+    const close = lower.indexOf(closer, openEnd + 1);
+    if (close < 0) break;
+    const attrs = lower.slice(open, openEnd);
+    if (!attrs.includes("src=")) {
+      const code = html.slice(openEnd + 1, close).trim();
+      if (code && !/type\s*=\s*["']?(application\/(json|ld\+?json)|text\/(template|html))/.test(attrs)) out.push(code);
+    }
+    pos = close + closer.length;
+  }
+  return out;
+}
+function buildRemix(baseHtml, injectCode, la, lb) {
+  const closeTag = "</body>";
+  const snippet = "<!-- injected by Game Fusion from " + esc(lb) + " -->\n<script>\n(function(){\ntry{\n"
+    + injectCode + "\n}catch(err){document.title='Remix error: '+err.message;}\n})();\n<\/script>\n";
+  const idx = baseHtml.toLowerCase().lastIndexOf(closeTag);
+  if (idx >= 0) return baseHtml.slice(0, idx) + snippet + baseHtml.slice(idx);
+  return baseHtml + "\n" + snippet;
+}
+
+/* ============ fuse action ============ */
+$("fuseBtn").addEventListener("click", () => {
+  if (!state.a || !state.b) { log("Load BOTH Game A and Game B first (or use the demo buttons).", "err"); return; }
+  const la = $("labelA").value.trim() || state.a.name;
+  const lb = $("labelB").value.trim() || state.b.name;
+  let out = "";
+  try {
+    if (currentMode === "split") {
+      out = buildSplit(state.a.html, state.b.html, parseInt($("splitRatio").value, 10), la, lb);
+      log("Fused in split-screen mode: " + la + " | " + lb, "ok");
+    } else if (currentMode === "tabs") {
+      out = buildTabs(state.a.html, state.b.html, la, lb);
+      log("Fused in tabbed mode: " + la + " / " + lb, "ok");
+    } else if (currentMode === "remix") {
+      const userCode = $("remixCode").value.trim();
+      const bScripts = extractScripts(state.b.html);
+      const code = userCode ? userCode : bScripts.join("\n;\n");
+      if (!code) { log("Remix mode: Game B has no inline <script> blocks and the remix box is empty.", "err"); return; }
+      out = buildRemix(state.a.html, code, la, lb);
+      log("Remixed: injected " + (userCode ? "custom script" : bScripts.length + " script block(s) from " + lb) + " into " + la, "ok");
+    }
+    lastFused = out;
+    $("stage").srcdoc = out;
+    $("stageInfo").textContent = currentMode + " • " + Math.round(out.length / 1024) + " KB";
+  } catch (e) {
+    log("Fusion failed: " + e.message, "err");
+  }
+});
+
+/* ============ ZIP writer (stored = no compression, CRC32) ============ */
+const _crcTable = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = _crcTable[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(entries) { // entries: [{name, data(Uint8Array)}]
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  for (const e of entries) {
+    const nameBytes = enc.encode(e.name), data = e.data, crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true);
+    lh.setUint16(26, nameBytes.length, true);
+    parts.push(new Uint8Array(lh.buffer), nameBytes, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(10, 0, true); ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true);
+    ch.setUint16(28, nameBytes.length, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const cdSize = central.reduce((s, u) => s + u.length, 0);
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true); eocd.setUint16(10, entries.length, true);
+  eocd.setUint32(12, cdSize, true); eocd.setUint32(16, offset, true);
+  const all = parts.concat(central, [new Uint8Array(eocd.buffer)]);
+  return new Blob(all, { type: "application/zip" });
+}
+
+/* ============ library scanner .bat generator ============ */
+// Builds scan-games.bat + scan-games.ps1 for the ZIP export. Running the .bat on
+// Windows scans for installed games from Steam, Epic Games and itch.io (registry
+// keys + launcher manifests) plus HTML browser-games in Documents/Desktop/Downloads,
+// and writes game-library.json next to itself. The app can then import that JSON
+// and give you one-click "-> A" / "-> B" buttons per game.
+const LIB_SCANNER_PS1 = [
+"# Universal Modder - Game Library Scanner (invoked by scan-games.bat)",
+"$ErrorActionPreference = 'SilentlyContinue'",
+"$games = @()",
+"function AddGame($name, $platform, $path) {",
+"    if ($name -and $path -and (Test-Path -LiteralPath $path)) {",
+"        $script:games += [pscustomobject]@{ name = [string]$name; platform = $platform; path = $path }",
+"    }",
+"}",
+"# ---- STEAM ----",
+"$steam = $null",
+"foreach ($r in @('HKCU:\\Software\\Valve\\Steam','HKLM:\\SOFTWARE\\WOW6432Node\\Valve\\Steam','HKLM:\\SOFTWARE\\Valve\\Steam')) {",
+"    $p = (Get-ItemProperty $r).'InstallPath'",
+"    if ($p) { $steam = $p; break }",
+"}",
+"if ($steam -and (Test-Path -LiteralPath $steam)) {",
+"    $sf = Join-Path $steam 'steamapps'",
+"    $libs = @($sf)",
+"    $lfp = Join-Path $sf 'libraryfolders.vdf'",
+"    if (Test-Path -LiteralPath $lfp) {",
+"        foreach ($ln in Get-Content -LiteralPath $lfp) {",
+"            if ($ln -match '\"path\"\\s*\"([^\"]+)\"') { $libs += ($matches[1] -replace '\\\\\\\\', '\\') }",
+"        }",
+"    }",
+"    foreach ($lib in $libs) {",
+"        $a = Join-Path $lib 'steamapps'",
+"        if (-not (Test-Path -LiteralPath $a)) { continue }",
+"        foreach ($m in Get-ChildItem -LiteralPath $a -Filter 'appmanifest_*.acf') {",
+"            $txt = Get-Content -Raw -LiteralPath $m.FullName",
+"            $nm = $null; $sd = $null",
+"            if ($txt -match '\"name\"\\s*\"([^\"]*)\"') { $nm = $matches[1] }",
+"            if ($txt -match '\"installdir\"\\s*\"([^\"]*)\"') { $sd = $matches[1] }",
+"            if ($nm) {",
+"                $gp = Join-Path (Join-Path $a 'common') ($sd -replace '[\\\\/]', '\\')",
+"                AddGame $nm 'Steam' $gp",
+"            }",
+"        }",
+"    }",
+"}",
+"# ---- EPIC GAMES ----",
+"$el = Join-Path $env:LOCALAPPDATA 'EpicGamesLauncher\\Data\\Manifests'",
+"if (Test-Path -LiteralPath $el) {",
+"    foreach ($f in Get-ChildItem -LiteralPath $el -Filter '*.item') {",
+"        try {",
+"            $j = Get-Content -Raw -LiteralPath $f.FullName | ConvertFrom-Json",
+"            if ($j.AppName) { AddGame $j.DisplayName 'Epic' $j.InstallLocation }",
+"        } catch {}",
+"    }",
+"}",
+"# ---- ITCH.IO ----",
+"$w = Join-Path $env:APPDATA 'itch\\crumbs\\downloads.json'",
+"if (Test-Path -LiteralPath $w) {",
+"    try {",
+"        $bt = Get-Content -Raw -LiteralPath $w | ConvertFrom-Json",
+"        foreach ($k in $bt.PSObject.Properties.Name) {",
+"            $v = $bt.$k",
+"            if ($v.target) { AddGame ([string]($v.title -join ' ')) 'itch.io' $v.target }",
+"        }",
+"    } catch {}",
+"}",
+"$it = Join-Path $env:LOCALAPPDATA 'itch\\butler\\apps'",
+"if (Test-Path -LiteralPath $it) {",
+"    foreach ($d in Get-ChildItem -LiteralPath $it -Directory) { AddGame $d.Name 'itch.io' $d.FullName }",
+"}",
+"# ---- HTML browser-games in Documents / Desktop / Downloads ----",
+"$roots = @(",
+"    (Join-Path $env:USERPROFILE 'Documents'),",
+"    (Join-Path $env:USERPROFILE 'Desktop'),",
+"    (Join-Path $env:USERPROFILE 'Downloads')",
+")",
+"foreach ($root in $roots) {",
+"    if (-not (Test-Path -LiteralPath $root)) { continue }",
+"    foreach ($h in Get-ChildItem -LiteralPath $root -Recurse -Include *.html,*.htm -File -Depth 5) {",
+"        if ($h.Length -gt 5MB) { continue }",
+"        AddGame $h.Name 'HTML' $h.FullName",
+"    }",
+"}",
+"# ---- write game-library.json next to this script ----",
+"$out = Join-Path $PSScriptRoot 'game-library.json'",
+"if ($games.Count -eq 0) { Set-Content -LiteralPath $out -Value '[]' -Encoding UTF8 }",
+"else { $games | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $out -Encoding UTF8 }",
+"Write-Host ('Found ' + $games.Count + ' game(s). Wrote ' + $out)",
+"exit 0"
+].join("\r\n") + "\r\n";
+
+/* Self-contained scanner: the .bat embeds scan-games.ps1 below its own text
+   marker and extracts it at runtime — so one file alone works, no folder needed. */
+function makeLibraryBat() {
+  const bat = [
+    "@echo off",
+    "setlocal EnableExtensions DisableDelayedExpansion",
+    "title Universal Modder - Game Library Scanner",
+    "cd /d \"%~dp0\"",
+    "echo ==========================================",
+    "echo   Game Library Scanner (single file)",
+    "echo   Detects Steam / Epic Games / itch.io installs,",
+    "echo   plus HTML browser-games in Documents/Desktop/Downloads.",
+    "echo   Output: game-library.json (same folder as this .bat)",
+    "echo ==========================================",
+    "set \"PSFILE=%TEMP%\\gf-scan-games.ps1\"",
+    "if exist \"%PSFILE%\" del /q \"%PSFILE%\"",
+    "copy /y \"%~f0\" \"%TEMP%\\gf-src.txt\" >nul",
+    "findstr /n /c:\"@GAMEDATA@BEG\"\"INDATA\" \"%TEMP%\\gf-src.txt\" > \"%TEMP%\\gf-marker.txt\"",
+    "if not exist \"%TEMP%\\gf-marker.txt\" ( echo ERROR: embedded scanner marker missing. & pause & exit /b 1 )",
+    "set MK=",
+    "for /f \"usebackq tokens=1 delims=:\" %%L in (\"%TEMP%\\gf-marker.txt\") do if not defined MK set \"MK=%%L\"",
+    "if not defined MK ( echo ERROR: embedded scanner marker missing. & pause & exit /b 1 )",
+    "more +%MK% \"%TEMP%\\gf-src.txt\" | findstr /c:\"::@GAMEDATA@LINE\" > \"%PSFILE%.tmp\"",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; (Get-Content -LiteralPath '%PSFILE%.tmp' -Encoding UTF8) ^| ForEach-Object { $_ -replace '^::@GAMEDATA@LINE','' } ^| Set-Content -LiteralPath '%PSFILE%' -Encoding UTF8; Remove-Item -LiteralPath '%PSFILE%.tmp'\"",
+    "del /q \"%TEMP%\\gf-src.txt\" \"%TEMP%\\gf-marker.txt\" 2>nul",
+    "for %%%%F in (\"%PSFILE%\") do if %%%%~zF equ 0 (",
+    "  echo ERROR: could not extract embedded scanner from this .bat.",
+    "  pause & exit /b 1",
+    ")",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; & '%PSFILE%'\"",
+    "set \"RC=%ERRORLEVEL%\"",
+    "del /q \"%PSFILE%\" 2>nul",
+    "echo.",
+    "if \"%RC%\"==\"0\" (",
+    "  echo Done. game-library.json was written next to this .bat.",
+    "  echo Open game-fusion.html ^(or fused-game.html^), press",
+    "  echo \"Import game-library.json\", pick that file, and click",
+    "  echo -^> A / -^> B next to any game to load it instantly.",
+    ") else (",
+    "  echo Scanner exited with error code %RC% - see messages above.",
+    ")",
+    "pause",
+    "exit /b %RC%",
+    ":: @GAMEDATA@BEGINDATA Everything after this line is the embedded PowerShell scanner.",
+    ""
+  ].join("\r\n");
+  // Embed every PS line as a batch comment tagged ::@GAMEDATA@LINE. The findstr
+  // step locates the single BEGINDATA marker (the findstr command line itself is
+  // written as two concatenated quoted strings so it does NOT contain the full
+  // search literal — only the real marker line matches), `more` skips to the
+  // payload, and a second findstr keeps only tagged lines before PowerShell
+  // strips the LINE prefixes.
+  const emb = LIB_SCANNER_PS1.split(/\r?\n/)
+    .map(l => "::@GAMEDATA@LINE" + l)
+    .join("\r\n");
+  return bat + emb + "\r\n";
+}
+
+/* ============ export ============ */
+// Exposed so a scanner-only ZIP can be generated even before fusing anything.
+window.__gfMakeZip = makeZip;
+window.__gfLibraryFiles = () => {
+  const enc = new TextEncoder();
+  // Single self-contained .bat — no companion files or folders needed.
+  return [{ name: "scan-games.bat", data: enc.encode(makeLibraryBat()) }];
+};
+$("dlScannerBtn").addEventListener("click", () => {
+  // Direct download of the scanner itself — no zip, no folder, one file.
+  downloadBlob(new Blob([makeLibraryBat()], { type: "application/x-msdownload" }), "scan-games.bat");
+  log("Downloaded scan-games.bat — double-click it to detect your Steam/Epic/itch.io games (Windows).", "ok");
+});
+$("copyBtn").addEventListener("click", () => {
+  if (!lastFused) { log("Nothing to copy — hit 'Fuse & Play' first.", "err"); return; }
+  (navigator.clipboard ? navigator.clipboard.writeText(lastFused) : Promise.reject())
+    .then(() => log("Fused HTML copied to clipboard.", "ok"))
+    .catch(() => { const t = $("remixCode"); log("Clipboard blocked by browser — use Download instead.", "warn"); });
+});
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$("dlBtn").addEventListener("click", () => {
+  if (!lastFused) { log("Nothing to download — hit 'Fuse & Play' first.", "err"); return; }
+  const enc = new TextEncoder();
+  if ($("dlFormat").value === "zip") {
+    const files = [
+      { name: "fused-game.html", data: enc.encode(lastFused) },
+      { name: "scan-games.bat", data: enc.encode(makeLibraryBat()) },
+      { name: "README.txt", data: enc.encode(
+        "Game Fusion package\n=====================\n" +
+        "- fused-game.html : the combined game. Open it in any browser to play.\n" +
+        (state.a && state.b ? "- source-a.html   : Game A as loaded (" + state.a.name + ")\n- source-b.html   : Game B as loaded (" + state.b.name + ")\n" : "") +
+        "\nGAME LIBRARY SCANNER (Windows):\n" +
+        "1. Extract this zip anywhere.\n" +
+        "2. Double-click scan-games.bat (it is fully self-contained —\n" +
+        "   no other files needed).\n" +
+        "   It scans for installed games from Steam, Epic Games and itch.io\n" +
+        "   (registry + launcher manifests) plus HTML games in your\n" +
+        "   Documents/Desktop/Downloads, and writes game-library.json here.\n" +
+        "3. Open fused-game.html (or game-fusion.html), press\n" +
+        "   'Import game-library.json', pick that file, then click ->A / ->B\n" +
+        "   next to any listed game to load it into the fusion slots.\n" +
+        "   (HTML games load instantly; Steam/Epic/itch entries show their\n" +
+        "   install path so you can drag the game's .html file in manually.)\n" +
+        "\nMade with Game Fusion (universal-modder family). 100% offline.\n") },
+    ];
+    if (state.a) files.push({ name: "source-a.html", data: enc.encode(state.a.html) });
+    if (state.b) files.push({ name: "source-b.html", data: enc.encode(state.b.html) });
+    downloadBlob(makeZip(files), "fused-game.zip");
+    log("Downloaded fused-game.zip (" + files.length + " files incl. scan-games.bat library scanner).", "ok");
+  } else {
+    downloadBlob(new Blob([lastFused], { type: "text/html" }), "fused-game.html");
+    log("Downloaded fused-game.html — open it anywhere to play!", "ok");
+  }
+});
+
+/* ============ game scanner (File System API / folder picker) ============ */
+const SKIP_DIRS = /(^|[\\/])(node_modules|\.git|vendor|dist-cache|[Uu]nderstand|[Ll]ibrary|[Ww]indows|[Pp]rogram ?Files)/;
+const GAME_RE = /(<canvas|requestAnimationFrame|setInterval|\bgame\b|\bscore\b|\bplayer\b|\blevel\b|\bhighscore\b)/i;
+async function listHtmlInDir(dirHandle) {
+  const out = [];
+  async function walk(handle, path, depth) {
+    if (depth > 6) return;
+    for await (const [name, h] of handle.entries()) {
+      if (h.kind === "directory") {
+        if (SKIP_DIRS.test(path + "/" + name)) continue;
+        try { await walk(h, path + "/" + name, depth + 1); } catch (e) { /* permission-denied subfolder, skip */ }
+      } else if (/\.html?$/i.test(name)) {
+        out.push({ path: path + "/" + name, handle: h, name });
+      }
+    }
+  }
+  await walk(dirHandle, dirHandle.name || "", 0);
+  return out;
+}
+async function scanInto(candidates, rootLabel) {
+  const bar = $("scanBar"), fill = $("scanFill");
+  bar.style.display = "block"; fill.style.width = "0%";
+  const results = [];
+  let done = 0;
+  for (const c of candidates) {
+    done++;
+    fill.style.width = Math.round(done / Math.max(1, candidates.length) * 100) + "%";
+    try {
+      const fh = await c.handle.getFile();          // FileSystemFileHandle
+      if (!fh) continue;
+      const f = await fh.getFile();                  // File
+      if (!f || f.size > 5 * 1024 * 1024) continue;  // skip huge files
+      const text = await f.text();
+      if (GAME_RE.test(text)) results.push({ file: f, path: c.path });
+    } catch (e) { /* unreadable file, ignore */ }
+  }
+  bar.style.display = "none";
+  renderScanResults(results, rootLabel);
+}
+function renderScanResults(results, rootLabel) {
+  const box = $("scanResults");
+  box.innerHTML = "";
+  $("scanBadge").textContent = results.length + " game(s) found";
+  if (!results.length) {
+    const d = document.createElement("div");
+    d.className = "hintbox"; d.textContent = "No HTML games found in " + rootLabel + ". Try your Downloads/Games folder.";
+    box.appendChild(d); log("Scan of '" + rootLabel + "' finished: 0 games.", "warn"); return;
+  }
+  const list = document.createElement("div"); list.className = "scanlist";
+  results.slice(0, 200).forEach(r => {
+    const row = document.createElement("div"); row.className = "scanitem";
+    const nm = document.createElement("span"); nm.textContent = r.file.name; nm.style.flex = "1";
+    const pth = document.createElement("span"); pth.className = "path"; pth.title = r.path; pth.textContent = r.path;
+    const bA = document.createElement("button"); bA.className = "small"; bA.textContent = "→ A";
+    const bB = document.createElement("button"); bB.className = "small"; bB.textContent = "→ B";
+    bA.onclick = () => loadScannedGame(r, "a");
+    bB.onclick = () => loadScannedGame(r, "b");
+    row.append(nm, pth, bA, bB); list.appendChild(row);
+  });
+  box.appendChild(list);
+  log("Scan of '" + rootLabel + "' finished: found " + results.length + " candidate game(s).", "ok");
+}
+function loadScannedGame(r, slot) {
+  r.file.text().then(html => {
+    state[slot] = { name: r.file.name, html };
+    const d = slot === "a" ? ["dropA","badgeA"] : ["dropB","badgeB"];
+    $(d[0]).classList.add("loaded");
+    $(d[1]).textContent = r.file.name + " (" + Math.round(r.file.size / 1024) + " KB)";
+    log("Loaded Game " + (slot === "a" ? "A" : "B") + " from scan: " + r.path, "ok");
+  }).catch(() => log("Could not read " + r.path, "err"));
+}
+$("scanBtn").addEventListener("click", async () => {
+  if (window.showDirectoryPicker) {
+    try {
+      const dir = await window.showDirectoryPicker();
+      log("Scanning folder '" + dir.name + "' recursively…", "warn");
+      const cands = await listHtmlInDir(dir);
+      scanInto(cands, dir.name);
+    } catch (e) {
+      if (e.name !== "AbortError") log("Folder scan failed: " + e.message, "err");
+    }
+  } else {
+    $("scanDir").click(); // fallback: directory input
+  }
+});
+$("scanDir").addEventListener("change", async () => {
+  const files = Array.from($("scanDir").files || []);
+  if (!files.length) return;
+  const cands = files.filter(f => /\.html?$/i.test(f.name) && f.size <= 5 * 1024 * 1024 && !SKIP_DIRS.test(f.webkitRelativePath));
+  $("scanBadge").textContent = "scanning " + cands.length + " file(s)…";
+  const results = [];
+  for (const f of cands) {
+    try { if (GAME_RE.test(await f.text())) results.push({ file: f, path: f.webkitRelativePath || f.name }); } catch (e) {}
+  }
+  renderScanResults(results, ($("scanDir").files[0].webkitRelativePath || "").split("/")[0] || "picked folder");
+  $("scanDir").value = "";
+});
+$("scanQuickBtn").addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) { log("Quick scan needs Chrome/Edge (File System API). Use 'Scan a folder…' instead.", "err"); return; }
+  const guesses = ["Downloads", "Documents", "Games", "My Games", "Desktop"];
+  let scanned = 0;
+  for (const g of guesses) {
+    try {
+      const root = await window.showDirectoryPicker({ id: "quick-" + g, startIn: g.toLowerCase() });
+      log("Trying common folder '" + root.name + "'…", "warn");
+      const cands = await listHtmlInDir(root);
+      await scanInto(cands, root.name);
+      scanned++;
+      break; // one successful quick pick is enough; picker already guided the user
+    } catch (e) {
+      if (e.name === "AbortError") { log("Quick scan cancelled.", "warn"); return; }
+    }
+  }
+  if (!scanned) log("Quick scan found no accessible common folders — use 'Scan a folder…'.", "err");
+});
+
+/* ============ game-library.json import (from scan-games.bat) ============ */
+let libGames = []; // [{name, platform, path}]
+let pendingLibSlot = null;
+$("libImportBtn").addEventListener("click", () => $("libFile").click());
+$("libFile").addEventListener("change", async () => {
+  const f = $("libFile").files[0];
+  if (!f) return;
+  try {
+    let data = JSON.parse(await f.text());
+    if (!Array.isArray(data)) data = [data];           // single object
+    libGames = data
+      .filter(g => g && g.name && g.path)
+      .map(g => ({ name: String(g.name), platform: String(g.platform || "Unknown"), path: String(g.path) }));
+    renderLibrary();
+    log("Imported game library: " + libGames.length + " entries (" +
+        [...new Set(libGames.map(g => g.platform))].join(", ") + ").", "ok");
+  } catch (e) {
+    log("Could not parse game-library.json: " + e.message, "err");
+  }
+  $("libFile").value = "";
+});
+function renderLibrary() {
+  const box = $("libResults");
+  box.innerHTML = "";
+  $("libBadge").textContent = libGames.length ? libGames.length + " games imported" : "no library imported";
+  if (!libGames.length) return;
+  const order = { Steam: 0, Epic: 1, "itch.io": 2, HTML: 3 };
+  const sorted = [...libGames].sort((a, b) =>
+    ((order[a.platform] ?? 9) - (order[b.platform] ?? 9)) || a.name.localeCompare(b.name));
+  let lastPlat = null;
+  sorted.slice(0, 300).forEach(g => {
+    if (g.platform !== lastPlat) {
+      lastPlat = g.platform;
+      const h = document.createElement("div");
+      h.className = "badge"; h.style.margin = "8px 0 4px";
+      h.textContent = "▸ " + g.platform;
+      box.appendChild(h);
+    }
+    const row = document.createElement("div"); row.className = "scanitem";
+    const nm = document.createElement("span"); nm.textContent = g.name; nm.style.flex = "1";
+    const pth = document.createElement("span"); pth.className = "path"; pth.title = g.path; pth.textContent = g.path;
+    const isHtml = /\.html?$/i.test(g.path);
+    const bA = document.createElement("button"); bA.className = "small"; bA.textContent = "→ A";
+    const bB = document.createElement("button"); bB.className = "small"; bB.textContent = "→ B";
+    if (isHtml) {
+      bA.onclick = () => loadLibGame(g, "a");
+      bB.onclick = () => loadLibGame(g, "b");
+    } else {
+      bA.title = bB.title = "Desktop-game entry — click to pick its main executable/folder via the file picker";
+      bA.onclick = bB.onclick = (ev) => loadLibExe(g, ev.target.textContent.includes("A") ? "a" : "b");
+    }
+    row.append(nm, pth, bA, bB); box.appendChild(row);
+  });
+}
+// HTML entries: read the file straight from disk when the browser grants access.
+function loadLibGame(g, slot) {
+  const setSlot = (name, html, note) => {
+    state[slot] = { name, html };
+    const d = slot === "a" ? ["dropA", "badgeA"] : ["dropB", "badgeB"];
+    $(d[0]).classList.add("loaded");
+    $(d[1]).textContent = name + (note ? " " + note : "");
+    log("Loaded Game " + slot.toUpperCase() + " from library: " + g.path, "ok");
+  };
+  // Try File System Access first so we can grab the exact path's file.
+  if (window.showOpenFilePicker) {
+    window.showOpenFilePicker({ multiple: false })
+      .then(async ([handle]) => {
+        const f = await handle.getFile();
+        setSlot(f.name, await f.text(), "(library → picked file)");
+      })
+      .catch(() => { /* user cancelled */ });
+  } else {
+    pendingLibSlot = slot;
+    $("libPickFile").click();
+  }
+}
+// Steam/Epic/itch entries aren't HTML — let the user point at the game folder's index.html if it has one.
+function loadLibExe(g, slot) {
+  log(g.platform + " game '" + g.name + "' lives at " + g.path + " — browsers can only fuse HTML games; if this title ships an .html build, pick it now (or drag it into slot " + slot.toUpperCase() + ").", "warn");
+  if (window.showOpenFilePicker) {
+    window.showOpenFilePicker({ multiple: false, types: [{ description: "HTML game", accept: { "text/html": [".html", ".htm"] } }] })
+      .then(async ([handle]) => {
+        const f = await handle.getFile();
+        state[slot] = { name: f.name, html: await f.text() };
+        const d = slot === "a" ? ["dropA", "badgeA"] : ["dropB", "badgeB"];
+        $(d[0]).classList.add("loaded");
+        $(d[1]).textContent = f.name + " (for " + g.name + ")";
+        log("Loaded Game " + slot.toUpperCase() + " for library entry '" + g.name + "'.", "ok");
+      })
+      .catch(() => {});
+  } else {
+    pendingLibSlot = slot;
+    $("libPickFile").click();
+  }
+}
+$("libPickFile").addEventListener("change", async () => {
+  const f = $("libPickFile").files[0];
+  if (!f || !pendingLibSlot) return;
+  const slot = pendingLibSlot; pendingLibSlot = null;
+  state[slot] = { name: f.name, html: await f.text() };
+  const d = slot === "a" ? ["dropA", "badgeA"] : ["dropB", "badgeB"];
+  $(d[0]).classList.add("loaded");
+  $(d[1]).textContent = f.name + " (library fallback)";
+  log("Loaded Game " + slot.toUpperCase() + ": " + f.name, "ok");
+  $("libPickFile").value = "";
+});
+
+/* ============ demo games (self-contained mini-games) ============ */
+const DEMO_A = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Snake</title>
+<style>body{margin:0;background:#0c1220;color:#cfe3ff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
+h3{margin:4px}canvas{border:2px solid #2b4a7a;border-radius:8px;background:#081018}
+p{font-size:12px;color:#7f96c0;margin:6px}</style></head><body>
+<h3>🐍 Snake</h3><canvas id="c" width="300" height="300"></canvas><p>Arrow keys to move. Eat, don't bite yourself!</p>
+<script>
+var g=c.getContext("2d"),N=15,S=20,x=7,y=7,dx=0,dy=0,fx=3,fy=3,len=4,dead=false;
+function tick(){if(dead)return;
+ x+=dx;y+=dy;
+ if(x<0||y<0||x>=N||y>=N||len>4){for(var i=0;i<cells&&i<len-1;i++){} }
+ if(x<0||y<0||x>=N||y>=N){dead=true;}
+ for(var i=0;i<body.length;i++)if(body[i].x===x&&body[i].y===y)dead=true;
+ body.unshift({x:x,y:y});
+ if(x===fx&&y===fy){len++;fx=Math.floor(Math.random()*N);fy=Math.floor(Math.random()*N);}
+ while(body.length>len)body.pop();
+ draw();}
+var body=[{x:7,y:7}];
+function draw(){g.fillStyle="#081018";g.fillRect(0,0,300,300);
+ g.fillStyle="#ff5c8a";g.fillRect(fx*S+2,fy*S+2,S-4,S-4);
+ g.fillStyle="#3ddc97";body.forEach(function(p,i){g.globalAlpha=1-i*0.02;g.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);});
+ g.globalAlpha=1;
+ if(dead){g.fillStyle="#fff";g.font="22px system-ui";g.fillText("GAME OVER",60,150);g.font="12px system-ui";g.fillText("press space",105,172);}}
+function reset(){x=y=7;dx=dy=0;body=[{x:7,y:7}];len=4;dead=false;draw();}
+addEventListener("keydown",function(e){
+ if(e.key===" "&&dead){reset();return;}
+ var m={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]}[e.key];
+ if(m){if(dx!==0||dy!==0){if(-m[0]===dx&&-m[1]===dy)return;}dx=m[0];dy=m[1];e.preventDefault();}});
+setInterval(tick,120);draw();
+<\/script></body></html>`;
+
+const DEMO_B = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Click Frenzy</title>
+<style>body{margin:0;background:#160c20;color:#ffd9ec;font-family:system-ui;text-align:center;height:100vh;overflow:hidden}
+h3{margin:8px}#score,#time{font-size:14px}#target{position:absolute;width:56px;height:56px;border-radius:50%;
+background:radial-gradient(circle at 30% 30%,#ff9ec2,#ff2f7b);cursor:pointer;top:120px;left:120px;box-shadow:0 0 18px #ff2f7b80}</style></head><body>
+<h3>🎯 Click Frenzy</h3><div id="score">Score: 0</div><div id="time">Time: 20s</div>
+<div id="target"></div>
+<script>
+var sc=0,t=20,on=true,el=document.getElementById("target"),se=document.getElementById("score"),te=document.getElementById("time");
+function move(){el.style.left=(Math.random()*(innerWidth-70)+5)+"px";el.style.top=(Math.random()*(innerHeight-140)+80)+"px";}
+el.addEventListener("pointerdown",function(){if(!on)return;sc++;se.textContent="Score: "+sc;move();});
+setInterval(function(){if(on){t--;te.textContent="Time: "+t+"s";if(t<=0){on=false;el.style.display="none";te.textContent="⏱ Done! Final score: "+sc;}}},1000);
+move();
+<\/script></body></html>`;
+
+$("demoA").addEventListener("click", () => {
+  state.a = { name: "demo-snake.html", html: DEMO_A };
+  $("dropA").classList.add("loaded");
+  $("badgeA").textContent = "demo-snake.html (built-in)";
+  log("Loaded built-in demo Game A: Snake", "ok");
+});
+$("demoB").addEventListener("click", () => {
+  state.b = { name: "demo-clickfrenzy.html", html: DEMO_B };
+  $("dropB").classList.add("loaded");
+  $("badgeB").textContent = "demo-clickfrenzy.html (built-in)";
+  log("Loaded built-in demo Game B: Click Frenzy", "ok");
+});
+
+log("Welcome to Game Fusion! Load two HTML games (or click both demo buttons) and press 🔥 Fuse & Play.", "ok");
+</script>
+</body>
+</html>
