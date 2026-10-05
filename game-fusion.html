@@ -168,13 +168,13 @@
       </div>
       <input type="file" id="scanDir" class="hiddenfile" webkitdirectory directory multiple>
       <div class="row" style="margin-top:8px">
-        <button class="small" id="dlScannerBtn">⬇ Download scanner.zip</button>
+        <button class="small" id="dlScannerBtn">⬇ Download scanner (scan-games.bat)</button>
         <button class="small" id="libImportBtn">Import game-library.json</button>
         <input type="file" id="libFile" class="hiddenfile" accept=".json,application/json">
       <input type="file" id="libPickFile" class="hiddenfile" accept=".html,.htm">
         <span class="badge" id="libBadge">no library imported</span>
       </div>
-      <div class="hintbox" style="margin-top:6px"><b>Full-PC scan (Windows):</b> press <b>⬇ Download scanner.zip</b> (above) — no fusion needed. Unzip it, double-click <code>scan-games.bat</code>: it detects installed games from <b>Steam, Epic Games and itch.io</b> (registry + launcher manifests) plus HTML games in Documents/Desktop/Downloads, and writes <code>game-library.json</code>. Then press "Import game-library.json" — every detected game appears with one-click <b>→ A / → B</b> buttons. The same scanner is also bundled inside the fused-game ZIP export. (Browsers can't read arbitrary paths, so the .bat + JSON import is how results get back into the app — everything stays local.)</div>
+      <div class="hintbox" style="margin-top:6px"><b>Full-PC scan (Windows):</b> press <b>⬇ Download scanner (scan-games.bat)</b> (above) — no fusion needed. You get the scanner file directly (no zip to open, no folders). Double-click <code>scan-games.bat</code>: it is a <b>single self-contained file</b> (the scanner lives inside the .bat itself — no companion files). It detects installed games from <b>Steam, Epic Games and itch.io</b> (registry + launcher manifests) plus HTML games in Documents/Desktop/Downloads, and writes <code>game-library.json</code>. Then press \"Import game-library.json\" — every detected game appears with one-click <b>→ A / → B</b> buttons. The same scanner is also bundled inside the fused-game ZIP export. (Browsers can't read arbitrary paths, so the .bat + JSON import is how results get back into the app — everything stays local.)</div>
       <div id="libResults"></div>
       <div class="scanbar" id="scanBar"><div id="scanFill"></div></div>
       <div class="hintbox" style="margin-top:8px">Your browser can only read folders you explicitly pick (sandboxed for privacy) — "Scan a folder…" opens the OS picker; everything is scanned locally, nothing is uploaded. It looks for .html/.htm files that contain game signals (&lt;canvas&gt;, &lt;script&gt;, score/game keywords), skipping node_modules and huge files.</div>
@@ -514,32 +514,62 @@ const LIB_SCANNER_PS1 = [
 "exit 0"
 ].join("\r\n") + "\r\n";
 
+/* Self-contained scanner: the .bat embeds scan-games.ps1 below its own text
+   marker and extracts it at runtime — so one file alone works, no folder needed. */
 function makeLibraryBat() {
-  return [
+  const bat = [
     "@echo off",
-    "setlocal EnableExtensions",
+    "setlocal EnableExtensions DisableDelayedExpansion",
     "title Universal Modder - Game Library Scanner",
     "cd /d \"%~dp0\"",
     "echo ==========================================",
-    "echo   Game Library Scanner",
+    "echo   Game Library Scanner (single file)",
     "echo   Detects Steam / Epic Games / itch.io installs,",
-    "echo   plus HTML browser-games in your folders.",
+    "echo   plus HTML browser-games in Documents/Desktop/Downloads.",
     "echo   Output: game-library.json (same folder as this .bat)",
     "echo ==========================================",
-    "if not exist \"%~dp0scan-games.ps1\" (",
-    "  echo ERROR: scan-games.ps1 is missing next to this .bat.",
-    "  echo Keep both files together from the fused-game.zip package.",
+    "set \"PSFILE=%TEMP%\\gf-scan-games.ps1\"",
+    "if exist \"%PSFILE%\" del /q \"%PSFILE%\"",
+    "copy /y \"%~f0\" \"%TEMP%\\gf-src.txt\" >nul",
+    "findstr /n /c:\"@GAMEDATA@BEG\"\"INDATA\" \"%TEMP%\\gf-src.txt\" > \"%TEMP%\\gf-marker.txt\"",
+    "if not exist \"%TEMP%\\gf-marker.txt\" ( echo ERROR: embedded scanner marker missing. & pause & exit /b 1 )",
+    "set MK=",
+    "for /f \"usebackq tokens=1 delims=:\" %%L in (\"%TEMP%\\gf-marker.txt\") do if not defined MK set \"MK=%%L\"",
+    "if not defined MK ( echo ERROR: embedded scanner marker missing. & pause & exit /b 1 )",
+    "more +%MK% \"%TEMP%\\gf-src.txt\" | findstr /c:\"::@GAMEDATA@LINE\" > \"%PSFILE%.tmp\"",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; (Get-Content -LiteralPath '%PSFILE%.tmp' -Encoding UTF8) ^| ForEach-Object { $_ -replace '^::@GAMEDATA@LINE','' } ^| Set-Content -LiteralPath '%PSFILE%' -Encoding UTF8; Remove-Item -LiteralPath '%PSFILE%.tmp'\"",
+    "del /q \"%TEMP%\\gf-src.txt\" \"%TEMP%\\gf-marker.txt\" 2>nul",
+    "for %%%%F in (\"%PSFILE%\") do if %%%%~zF equ 0 (",
+    "  echo ERROR: could not extract embedded scanner from this .bat.",
     "  pause & exit /b 1",
     ")",
-    "powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0scan-games.ps1\"",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; & '%PSFILE%'\"",
+    "set \"RC=%ERRORLEVEL%\"",
+    "del /q \"%PSFILE%\" 2>nul",
     "echo.",
-    "echo Done. Open game-fusion.html (or fused-game.html), press",
-    "echo \"Import game-library.json\", pick the file just created, and",
-    "echo click -^> A / -^> B next to any game to load it instantly.",
+    "if \"%RC%\"==\"0\" (",
+    "  echo Done. game-library.json was written next to this .bat.",
+    "  echo Open game-fusion.html ^(or fused-game.html^), press",
+    "  echo \"Import game-library.json\", pick that file, and click",
+    "  echo -^> A / -^> B next to any game to load it instantly.",
+    ") else (",
+    "  echo Scanner exited with error code %RC% - see messages above.",
+    ")",
     "pause",
-    "endlocal",
+    "exit /b %RC%",
+    ":: @GAMEDATA@BEGINDATA Everything after this line is the embedded PowerShell scanner.",
     ""
   ].join("\r\n");
+  // Embed every PS line as a batch comment tagged ::@GAMEDATA@LINE. The findstr
+  // step locates the single BEGINDATA marker (the findstr command line itself is
+  // written as two concatenated quoted strings so it does NOT contain the full
+  // search literal — only the real marker line matches), `more` skips to the
+  // payload, and a second findstr keeps only tagged lines before PowerShell
+  // strips the LINE prefixes.
+  const emb = LIB_SCANNER_PS1.split(/\r?\n/)
+    .map(l => "::@GAMEDATA@LINE" + l)
+    .join("\r\n");
+  return bat + emb + "\r\n";
 }
 
 /* ============ export ============ */
@@ -547,24 +577,13 @@ function makeLibraryBat() {
 window.__gfMakeZip = makeZip;
 window.__gfLibraryFiles = () => {
   const enc = new TextEncoder();
-  return [
-    { name: "scan-games.bat", data: enc.encode(makeLibraryBat()) },
-    { name: "scan-games.ps1", data: enc.encode(LIB_SCANNER_PS1) },
-    { name: "README.txt", data: enc.encode(
-      "Game Library Scanner\n=====================\n" +
-      "1. Keep scan-games.bat and scan-games.ps1 together in one folder.\n" +
-      "2. Double-click scan-games.bat.\n" +
-      "   It detects installed games from Steam, Epic Games and itch.io\n" +
-      "   (registry + launcher manifests) plus HTML games in your\n" +
-      "   Documents/Desktop/Downloads, then writes game-library.json here.\n" +
-      "3. Open game-fusion.html in your browser, press\n" +
-      "   'Import game-library.json', pick that file, then click ->A / ->B\n" +
-      "   next to any listed game to load it instantly.\n") },
-  ];
+  // Single self-contained .bat — no companion files or folders needed.
+  return [{ name: "scan-games.bat", data: enc.encode(makeLibraryBat()) }];
 };
 $("dlScannerBtn").addEventListener("click", () => {
-  downloadBlob(makeZip(window.__gfLibraryFiles()), "scanner.zip");
-  log("Downloaded scanner.zip — unzip it and double-click scan-games.bat to detect your Steam/Epic/itch.io games.", "ok");
+  // Direct download of the scanner itself — no zip, no folder, one file.
+  downloadBlob(new Blob([makeLibraryBat()], { type: "application/x-msdownload" }), "scan-games.bat");
+  log("Downloaded scan-games.bat — double-click it to detect your Steam/Epic/itch.io games (Windows).", "ok");
 });
 $("copyBtn").addEventListener("click", () => {
   if (!lastFused) { log("Nothing to copy — hit 'Fuse & Play' first.", "err"); return; }
@@ -586,14 +605,14 @@ $("dlBtn").addEventListener("click", () => {
     const files = [
       { name: "fused-game.html", data: enc.encode(lastFused) },
       { name: "scan-games.bat", data: enc.encode(makeLibraryBat()) },
-      { name: "scan-games.ps1", data: enc.encode(LIB_SCANNER_PS1) },
       { name: "README.txt", data: enc.encode(
         "Game Fusion package\n=====================\n" +
         "- fused-game.html : the combined game. Open it in any browser to play.\n" +
         (state.a && state.b ? "- source-a.html   : Game A as loaded (" + state.a.name + ")\n- source-b.html   : Game B as loaded (" + state.b.name + ")\n" : "") +
         "\nGAME LIBRARY SCANNER (Windows):\n" +
-        "1. Extract this zip to a folder.\n" +
-        "2. Double-click scan-games.bat (keep scan-games.ps1 next to it).\n" +
+        "1. Extract this zip anywhere.\n" +
+        "2. Double-click scan-games.bat (it is fully self-contained —\n" +
+        "   no other files needed).\n" +
         "   It scans for installed games from Steam, Epic Games and itch.io\n" +
         "   (registry + launcher manifests) plus HTML games in your\n" +
         "   Documents/Desktop/Downloads, and writes game-library.json here.\n" +
