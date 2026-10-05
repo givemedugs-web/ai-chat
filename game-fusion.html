@@ -167,6 +167,15 @@
         <span class="badge" id="scanBadge">not scanned</span>
       </div>
       <input type="file" id="scanDir" class="hiddenfile" webkitdirectory directory multiple>
+      <div class="row" style="margin-top:8px">
+        <button class="small" id="dlScannerBtn">⬇ Download scanner.zip</button>
+        <button class="small" id="libImportBtn">Import game-library.json</button>
+        <input type="file" id="libFile" class="hiddenfile" accept=".json,application/json">
+      <input type="file" id="libPickFile" class="hiddenfile" accept=".html,.htm">
+        <span class="badge" id="libBadge">no library imported</span>
+      </div>
+      <div class="hintbox" style="margin-top:6px"><b>Full-PC scan (Windows):</b> press <b>⬇ Download scanner.zip</b> (above) — no fusion needed. Unzip it, double-click <code>scan-games.bat</code>: it detects installed games from <b>Steam, Epic Games and itch.io</b> (registry + launcher manifests) plus HTML games in Documents/Desktop/Downloads, and writes <code>game-library.json</code>. Then press "Import game-library.json" — every detected game appears with one-click <b>→ A / → B</b> buttons. The same scanner is also bundled inside the fused-game ZIP export. (Browsers can't read arbitrary paths, so the .bat + JSON import is how results get back into the app — everything stays local.)</div>
+      <div id="libResults"></div>
       <div class="scanbar" id="scanBar"><div id="scanFill"></div></div>
       <div class="hintbox" style="margin-top:8px">Your browser can only read folders you explicitly pick (sandboxed for privacy) — "Scan a folder…" opens the OS picker; everything is scanned locally, nothing is uploaded. It looks for .html/.htm files that contain game signals (&lt;canvas&gt;, &lt;script&gt;, score/game keywords), skipping node_modules and huge files.</div>
       <div id="scanResults"></div>
@@ -414,7 +423,149 @@ function makeZip(entries) { // entries: [{name, data(Uint8Array)}]
   return new Blob(all, { type: "application/zip" });
 }
 
+/* ============ library scanner .bat generator ============ */
+// Builds scan-games.bat + scan-games.ps1 for the ZIP export. Running the .bat on
+// Windows scans for installed games from Steam, Epic Games and itch.io (registry
+// keys + launcher manifests) plus HTML browser-games in Documents/Desktop/Downloads,
+// and writes game-library.json next to itself. The app can then import that JSON
+// and give you one-click "-> A" / "-> B" buttons per game.
+const LIB_SCANNER_PS1 = [
+"# Universal Modder - Game Library Scanner (invoked by scan-games.bat)",
+"$ErrorActionPreference = 'SilentlyContinue'",
+"$games = @()",
+"function AddGame($name, $platform, $path) {",
+"    if ($name -and $path -and (Test-Path -LiteralPath $path)) {",
+"        $script:games += [pscustomobject]@{ name = [string]$name; platform = $platform; path = $path }",
+"    }",
+"}",
+"# ---- STEAM ----",
+"$steam = $null",
+"foreach ($r in @('HKCU:\\Software\\Valve\\Steam','HKLM:\\SOFTWARE\\WOW6432Node\\Valve\\Steam','HKLM:\\SOFTWARE\\Valve\\Steam')) {",
+"    $p = (Get-ItemProperty $r).'InstallPath'",
+"    if ($p) { $steam = $p; break }",
+"}",
+"if ($steam -and (Test-Path -LiteralPath $steam)) {",
+"    $sf = Join-Path $steam 'steamapps'",
+"    $libs = @($sf)",
+"    $lfp = Join-Path $sf 'libraryfolders.vdf'",
+"    if (Test-Path -LiteralPath $lfp) {",
+"        foreach ($ln in Get-Content -LiteralPath $lfp) {",
+"            if ($ln -match '\"path\"\\s*\"([^\"]+)\"') { $libs += ($matches[1] -replace '\\\\\\\\', '\\') }",
+"        }",
+"    }",
+"    foreach ($lib in $libs) {",
+"        $a = Join-Path $lib 'steamapps'",
+"        if (-not (Test-Path -LiteralPath $a)) { continue }",
+"        foreach ($m in Get-ChildItem -LiteralPath $a -Filter 'appmanifest_*.acf') {",
+"            $txt = Get-Content -Raw -LiteralPath $m.FullName",
+"            $nm = $null; $sd = $null",
+"            if ($txt -match '\"name\"\\s*\"([^\"]*)\"') { $nm = $matches[1] }",
+"            if ($txt -match '\"installdir\"\\s*\"([^\"]*)\"') { $sd = $matches[1] }",
+"            if ($nm) {",
+"                $gp = Join-Path (Join-Path $a 'common') ($sd -replace '[\\\\/]', '\\')",
+"                AddGame $nm 'Steam' $gp",
+"            }",
+"        }",
+"    }",
+"}",
+"# ---- EPIC GAMES ----",
+"$el = Join-Path $env:LOCALAPPDATA 'EpicGamesLauncher\\Data\\Manifests'",
+"if (Test-Path -LiteralPath $el) {",
+"    foreach ($f in Get-ChildItem -LiteralPath $el -Filter '*.item') {",
+"        try {",
+"            $j = Get-Content -Raw -LiteralPath $f.FullName | ConvertFrom-Json",
+"            if ($j.AppName) { AddGame $j.DisplayName 'Epic' $j.InstallLocation }",
+"        } catch {}",
+"    }",
+"}",
+"# ---- ITCH.IO ----",
+"$w = Join-Path $env:APPDATA 'itch\\crumbs\\downloads.json'",
+"if (Test-Path -LiteralPath $w) {",
+"    try {",
+"        $bt = Get-Content -Raw -LiteralPath $w | ConvertFrom-Json",
+"        foreach ($k in $bt.PSObject.Properties.Name) {",
+"            $v = $bt.$k",
+"            if ($v.target) { AddGame ([string]($v.title -join ' ')) 'itch.io' $v.target }",
+"        }",
+"    } catch {}",
+"}",
+"$it = Join-Path $env:LOCALAPPDATA 'itch\\butler\\apps'",
+"if (Test-Path -LiteralPath $it) {",
+"    foreach ($d in Get-ChildItem -LiteralPath $it -Directory) { AddGame $d.Name 'itch.io' $d.FullName }",
+"}",
+"# ---- HTML browser-games in Documents / Desktop / Downloads ----",
+"$roots = @(",
+"    (Join-Path $env:USERPROFILE 'Documents'),",
+"    (Join-Path $env:USERPROFILE 'Desktop'),",
+"    (Join-Path $env:USERPROFILE 'Downloads')",
+")",
+"foreach ($root in $roots) {",
+"    if (-not (Test-Path -LiteralPath $root)) { continue }",
+"    foreach ($h in Get-ChildItem -LiteralPath $root -Recurse -Include *.html,*.htm -File -Depth 5) {",
+"        if ($h.Length -gt 5MB) { continue }",
+"        AddGame $h.Name 'HTML' $h.FullName",
+"    }",
+"}",
+"# ---- write game-library.json next to this script ----",
+"$out = Join-Path $PSScriptRoot 'game-library.json'",
+"if ($games.Count -eq 0) { Set-Content -LiteralPath $out -Value '[]' -Encoding UTF8 }",
+"else { $games | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $out -Encoding UTF8 }",
+"Write-Host ('Found ' + $games.Count + ' game(s). Wrote ' + $out)",
+"exit 0"
+].join("\r\n") + "\r\n";
+
+function makeLibraryBat() {
+  return [
+    "@echo off",
+    "setlocal EnableExtensions",
+    "title Universal Modder - Game Library Scanner",
+    "cd /d \"%~dp0\"",
+    "echo ==========================================",
+    "echo   Game Library Scanner",
+    "echo   Detects Steam / Epic Games / itch.io installs,",
+    "echo   plus HTML browser-games in your folders.",
+    "echo   Output: game-library.json (same folder as this .bat)",
+    "echo ==========================================",
+    "if not exist \"%~dp0scan-games.ps1\" (",
+    "  echo ERROR: scan-games.ps1 is missing next to this .bat.",
+    "  echo Keep both files together from the fused-game.zip package.",
+    "  pause & exit /b 1",
+    ")",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0scan-games.ps1\"",
+    "echo.",
+    "echo Done. Open game-fusion.html (or fused-game.html), press",
+    "echo \"Import game-library.json\", pick the file just created, and",
+    "echo click -^> A / -^> B next to any game to load it instantly.",
+    "pause",
+    "endlocal",
+    ""
+  ].join("\r\n");
+}
+
 /* ============ export ============ */
+// Exposed so a scanner-only ZIP can be generated even before fusing anything.
+window.__gfMakeZip = makeZip;
+window.__gfLibraryFiles = () => {
+  const enc = new TextEncoder();
+  return [
+    { name: "scan-games.bat", data: enc.encode(makeLibraryBat()) },
+    { name: "scan-games.ps1", data: enc.encode(LIB_SCANNER_PS1) },
+    { name: "README.txt", data: enc.encode(
+      "Game Library Scanner\n=====================\n" +
+      "1. Keep scan-games.bat and scan-games.ps1 together in one folder.\n" +
+      "2. Double-click scan-games.bat.\n" +
+      "   It detects installed games from Steam, Epic Games and itch.io\n" +
+      "   (registry + launcher manifests) plus HTML games in your\n" +
+      "   Documents/Desktop/Downloads, then writes game-library.json here.\n" +
+      "3. Open game-fusion.html in your browser, press\n" +
+      "   'Import game-library.json', pick that file, then click ->A / ->B\n" +
+      "   next to any listed game to load it instantly.\n") },
+  ];
+};
+$("dlScannerBtn").addEventListener("click", () => {
+  downloadBlob(makeZip(window.__gfLibraryFiles()), "scanner.zip");
+  log("Downloaded scanner.zip — unzip it and double-click scan-games.bat to detect your Steam/Epic/itch.io games.", "ok");
+});
 $("copyBtn").addEventListener("click", () => {
   if (!lastFused) { log("Nothing to copy — hit 'Fuse & Play' first.", "err"); return; }
   (navigator.clipboard ? navigator.clipboard.writeText(lastFused) : Promise.reject())
@@ -434,16 +585,29 @@ $("dlBtn").addEventListener("click", () => {
   if ($("dlFormat").value === "zip") {
     const files = [
       { name: "fused-game.html", data: enc.encode(lastFused) },
+      { name: "scan-games.bat", data: enc.encode(makeLibraryBat()) },
+      { name: "scan-games.ps1", data: enc.encode(LIB_SCANNER_PS1) },
       { name: "README.txt", data: enc.encode(
         "Game Fusion package\n=====================\n" +
         "- fused-game.html : the combined game. Open it in any browser to play.\n" +
         (state.a && state.b ? "- source-a.html   : Game A as loaded (" + state.a.name + ")\n- source-b.html   : Game B as loaded (" + state.b.name + ")\n" : "") +
-        "Made with Game Fusion (universal-modder family). 100% offline.\n") },
+        "\nGAME LIBRARY SCANNER (Windows):\n" +
+        "1. Extract this zip to a folder.\n" +
+        "2. Double-click scan-games.bat (keep scan-games.ps1 next to it).\n" +
+        "   It scans for installed games from Steam, Epic Games and itch.io\n" +
+        "   (registry + launcher manifests) plus HTML games in your\n" +
+        "   Documents/Desktop/Downloads, and writes game-library.json here.\n" +
+        "3. Open fused-game.html (or game-fusion.html), press\n" +
+        "   'Import game-library.json', pick that file, then click ->A / ->B\n" +
+        "   next to any listed game to load it into the fusion slots.\n" +
+        "   (HTML games load instantly; Steam/Epic/itch entries show their\n" +
+        "   install path so you can drag the game's .html file in manually.)\n" +
+        "\nMade with Game Fusion (universal-modder family). 100% offline.\n") },
     ];
     if (state.a) files.push({ name: "source-a.html", data: enc.encode(state.a.html) });
     if (state.b) files.push({ name: "source-b.html", data: enc.encode(state.b.html) });
     downloadBlob(makeZip(files), "fused-game.zip");
-    log("Downloaded fused-game.zip (" + files.length + " files, stored/CRC32).", "ok");
+    log("Downloaded fused-game.zip (" + files.length + " files incl. scan-games.bat library scanner).", "ok");
   } else {
     downloadBlob(new Blob([lastFused], { type: "text/html" }), "fused-game.html");
     log("Downloaded fused-game.html — open it anywhere to play!", "ok");
@@ -564,6 +728,113 @@ $("scanQuickBtn").addEventListener("click", async () => {
     }
   }
   if (!scanned) log("Quick scan found no accessible common folders — use 'Scan a folder…'.", "err");
+});
+
+/* ============ game-library.json import (from scan-games.bat) ============ */
+let libGames = []; // [{name, platform, path}]
+let pendingLibSlot = null;
+$("libImportBtn").addEventListener("click", () => $("libFile").click());
+$("libFile").addEventListener("change", async () => {
+  const f = $("libFile").files[0];
+  if (!f) return;
+  try {
+    let data = JSON.parse(await f.text());
+    if (!Array.isArray(data)) data = [data];           // single object
+    libGames = data
+      .filter(g => g && g.name && g.path)
+      .map(g => ({ name: String(g.name), platform: String(g.platform || "Unknown"), path: String(g.path) }));
+    renderLibrary();
+    log("Imported game library: " + libGames.length + " entries (" +
+        [...new Set(libGames.map(g => g.platform))].join(", ") + ").", "ok");
+  } catch (e) {
+    log("Could not parse game-library.json: " + e.message, "err");
+  }
+  $("libFile").value = "";
+});
+function renderLibrary() {
+  const box = $("libResults");
+  box.innerHTML = "";
+  $("libBadge").textContent = libGames.length ? libGames.length + " games imported" : "no library imported";
+  if (!libGames.length) return;
+  const order = { Steam: 0, Epic: 1, "itch.io": 2, HTML: 3 };
+  const sorted = [...libGames].sort((a, b) =>
+    ((order[a.platform] ?? 9) - (order[b.platform] ?? 9)) || a.name.localeCompare(b.name));
+  let lastPlat = null;
+  sorted.slice(0, 300).forEach(g => {
+    if (g.platform !== lastPlat) {
+      lastPlat = g.platform;
+      const h = document.createElement("div");
+      h.className = "badge"; h.style.margin = "8px 0 4px";
+      h.textContent = "▸ " + g.platform;
+      box.appendChild(h);
+    }
+    const row = document.createElement("div"); row.className = "scanitem";
+    const nm = document.createElement("span"); nm.textContent = g.name; nm.style.flex = "1";
+    const pth = document.createElement("span"); pth.className = "path"; pth.title = g.path; pth.textContent = g.path;
+    const isHtml = /\.html?$/i.test(g.path);
+    const bA = document.createElement("button"); bA.className = "small"; bA.textContent = "→ A";
+    const bB = document.createElement("button"); bB.className = "small"; bB.textContent = "→ B";
+    if (isHtml) {
+      bA.onclick = () => loadLibGame(g, "a");
+      bB.onclick = () => loadLibGame(g, "b");
+    } else {
+      bA.title = bB.title = "Desktop-game entry — click to pick its main executable/folder via the file picker";
+      bA.onclick = bB.onclick = (ev) => loadLibExe(g, ev.target.textContent.includes("A") ? "a" : "b");
+    }
+    row.append(nm, pth, bA, bB); box.appendChild(row);
+  });
+}
+// HTML entries: read the file straight from disk when the browser grants access.
+function loadLibGame(g, slot) {
+  const setSlot = (name, html, note) => {
+    state[slot] = { name, html };
+    const d = slot === "a" ? ["dropA", "badgeA"] : ["dropB", "badgeB"];
+    $(d[0]).classList.add("loaded");
+    $(d[1]).textContent = name + (note ? " " + note : "");
+    log("Loaded Game " + slot.toUpperCase() + " from library: " + g.path, "ok");
+  };
+  // Try File System Access first so we can grab the exact path's file.
+  if (window.showOpenFilePicker) {
+    window.showOpenFilePicker({ multiple: false })
+      .then(async ([handle]) => {
+        const f = await handle.getFile();
+        setSlot(f.name, await f.text(), "(library → picked file)");
+      })
+      .catch(() => { /* user cancelled */ });
+  } else {
+    pendingLibSlot = slot;
+    $("libPickFile").click();
+  }
+}
+// Steam/Epic/itch entries aren't HTML — let the user point at the game folder's index.html if it has one.
+function loadLibExe(g, slot) {
+  log(g.platform + " game '" + g.name + "' lives at " + g.path + " — browsers can only fuse HTML games; if this title ships an .html build, pick it now (or drag it into slot " + slot.toUpperCase() + ").", "warn");
+  if (window.showOpenFilePicker) {
+    window.showOpenFilePicker({ multiple: false, types: [{ description: "HTML game", accept: { "text/html": [".html", ".htm"] } }] })
+      .then(async ([handle]) => {
+        const f = await handle.getFile();
+        state[slot] = { name: f.name, html: await f.text() };
+        const d = slot === "a" ? ["dropA", "badgeA"] : ["dropB", "badgeB"];
+        $(d[0]).classList.add("loaded");
+        $(d[1]).textContent = f.name + " (for " + g.name + ")";
+        log("Loaded Game " + slot.toUpperCase() + " for library entry '" + g.name + "'.", "ok");
+      })
+      .catch(() => {});
+  } else {
+    pendingLibSlot = slot;
+    $("libPickFile").click();
+  }
+}
+$("libPickFile").addEventListener("change", async () => {
+  const f = $("libPickFile").files[0];
+  if (!f || !pendingLibSlot) return;
+  const slot = pendingLibSlot; pendingLibSlot = null;
+  state[slot] = { name: f.name, html: await f.text() };
+  const d = slot === "a" ? ["dropA", "badgeA"] : ["dropB", "badgeB"];
+  $(d[0]).classList.add("loaded");
+  $(d[1]).textContent = f.name + " (library fallback)";
+  log("Loaded Game " + slot.toUpperCase() + ": " + f.name, "ok");
+  $("libPickFile").value = "";
 });
 
 /* ============ demo games (self-contained mini-games) ============ */
