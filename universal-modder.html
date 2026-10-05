@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Universal Modder</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --panel2: #1e2230;
+    --border: #2a2f42;
+    --text: #dfe3ee;
+    --muted: #8b91a7;
+    --accent: #6c8cff;
+    --accent2: #34d399;
+    --danger: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    padding: 14px 20px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 18px; letter-spacing: .5px; }
+  header h1 .logo { color: var(--accent); }
+  header .tag {
+    font-size: 11px; color: var(--muted); background: var(--panel2);
+    border: 1px solid var(--border); padding: 3px 8px; border-radius: 20px;
+  }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; max-width: 1400px; width: 100%; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  textarea, input[type=text], select {
+    width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px;
+    resize: vertical;
+  }
+  textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
+  #source { min-height: 260px; }
+  #patchArea { min-height: 300px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: translateY(1px); }
+  button.secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  button.success { background: var(--accent2); color: #06251a; }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  button.small { padding: 5px 9px; font-size: 12px; }
+  .dropzone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 14px;
+    text-align: center; color: var(--muted); font-size: 13px; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone.drag { border-color: var(--accent); background: rgba(108,140,255,.07); color: var(--text); }
+  .fileinfo { font-size: 12px; color: var(--muted); word-break: break-all; }
+  .fileinfo b { color: var(--accent2); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.ok { color: var(--accent2); border-color: var(--accent2); }
+  .badge.err { color: var(--danger); border-color: var(--danger); }
+  .mod-item {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .mod-item .mod-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .mod-item .mod-name { font-size: 13px; font-weight: 600; }
+  .mod-item .mod-meta { font-size: 11px; color: var(--muted); }
+  .toggle { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: var(--border); border-radius: 20px; cursor: pointer; transition: .2s; }
+  .slider:before { content: ""; position: absolute; width: 15px; height: 15px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .toggle input:checked + .slider { background: var(--accent2); }
+  .toggle input:checked + .slider:before { transform: translateX(17px); }
+  #log { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto; color: var(--muted); background: var(--panel2); border-radius: 8px; padding: 8px; border: 1px solid var(--border); }
+  #log .ok { color: var(--accent2); } #log .err { color: var(--danger); } #log .warn { color: var(--warn); }
+  .preset-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  code.k { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 11px; color: var(--accent); }
+  footer { text-align: center; font-size: 11px; color: var(--muted); padding: 10px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+  progress { width: 100%; height: 6px; accent-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="logo">⚙ Universal</span> Modder</h1>
+  <span class="tag">Patch &amp; mod any file — 100% local, nothing leaves your browser</span>
+</header>
+
+<main>
+  <!-- LEFT COLUMN -->
+  <div class="stack">
+    <section class="card">
+      <h2>1 · Load a file to mod</h2>
+      <div class="dropzone" id="dropzone">Drop a file here or click to browse<br>
+        <span class="hint">Works with HTML / JS / CSS / JSON / TXT / MD and other plain-text files. Binary files are handled byte-exactly.</span>
+      </div>
+      <input type="file" id="fileInput" hidden>
+      <div class="row">
+        <button class="secondary small" id="btnDemo">Load demo file</button>
+        <span class="fileinfo" id="fileInfo">No file loaded</span>
+        <span class="badge" id="typeBadge">—</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Source (edit directly or via mods below)</h2>
+      <textarea id="source" spellcheck="false" placeholder="// Your file contents appear here. You can also edit by hand."></textarea>
+      <div class="row">
+        <button id="btnCopySource">Copy source</button>
+        <button class="success" id="btnDownload">⬇ Download modified file</button>
+        <button class="secondary" id="btnReload">Reset from original</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="stack">
+    <section class="card">
+      <h2>3 · Create a mod (find → replace patch)</h2>
+      <input type="text" id="modName" placeholder="Mod name, e.g. “Dark mode override”">
+      <input type="text" id="findText" placeholder="Find (exact text)…">
+      <textarea id="replaceText" placeholder="Replace with…" style="min-height:80px"></textarea>
+      <div class="row">
+        <label style="font-size:12px;color:var(--muted)">Mode:</label>
+        <select id="matchMode" style="width:auto">
+          <option value="plain">Plain text</option>
+          <option value="regex">Regex</option>
+        </select>
+        <label class="row" style="font-size:12px;color:var(--muted);gap:4px"><input type="checkbox" id="optGlobal" checked> All occurrences</label>
+        <label class="row" style="font-size:12px;color:var(--muted);gap:4px"><input type="checkbox" id="optIcase"> Ignore case</label>
+        <label class="row" style="font-size:12px;color:var(--muted);gap:4px"><input type="checkbox" id="optAppend"> Append instead (inject code at end)</label>
+      </div>
+      <div class="row">
+        <button id="btnAddMod">＋ Add mod</button>
+        <span class="hint">Regex flags: <code class="k">g</code> if “all”, <code class="k">i</code> if ignore-case. Use <code class="k">$1</code>… for capture groups.</span>
+      </div>
+      <div class="preset-btns">
+        <button class="secondary small preset" data-preset="inject-script">Preset: inject &lt;script&gt;</button>
+        <button class="secondary small preset" data-preset="inject-style">Preset: inject &lt;style&gt;</button>
+        <button class="secondary small preset" data-preset="title">Preset: change title</button>
+        <button class="secondary small preset" data-preset="remove-comment">Preset: strip comments</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Active mods</h2>
+      <div id="modList" style="display:flex;flex-direction:column;gap:8px">
+        <div class="hint" id="noMods">No mods yet — add one above, or import a <code class="k">.umod.json</code> file.</div>
+      </div>
+      <div class="row">
+        <button class="secondary small" id="btnExportMods">Export mods (.umod.json)</button>
+        <button class="secondary small" id="btnImportMods">Import mods</button>
+        <input type="file" id="importInput" hidden accept=".json,.umod.json">
+        <button class="danger small" id="btnClearMods">Clear all</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Apply &amp; status</h2>
+      <div class="row">
+        <button class="success" id="btnApply">▶ Apply mods</button>
+        <button class="secondary" id="btnDiff">Show diff summary</button>
+      </div>
+      <div id="log">Ready. Load a file and add mods, then hit “Apply mods”.</div>
+    </section>
+  </div>
+</main>
+
+<footer>Universal Modder — everything runs locally in your browser. Save it as an .html file and reuse anytime.</footer>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    drop: $("dropzone"), file: $("fileInput"), info: $("fileInfo"), type: $("typeBadge"),
+    src: $("source"), modList: $("modList"), noMods: $("noMods"), log: $("log"),
+    find: $("findText"), repl: $("replaceText"), name: $("modName"),
+    mode: $("matchMode"), glob: $("optGlobal"), icase: $("optIcase"), append: $("optAppend"),
+    import: $("importInput")
+  };
+
+  let original = "";           // pristine original content
+  let currentName = "modified.txt";
+  let isBinary = false;
+  let binaryBytes = null;      // Uint8Array of original bytes
+  let mods = [];               // {id,name,type:'find'|'append',find,replace,mode,glob,icase,enabled}
+  let uid = 1;
+
+  // ---------- logging ----------
+  function log(msg, cls) {
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+    els.log.appendChild(line);
+    els.log.scrollTop = els.log.scrollHeight;
+  }
+
+  // ---------- file loading ----------
+  function looksBinary(bytes) {
+    const n = Math.min(bytes.length, 8000);
+    let suspicious = 0;
+    for (let i = 0; i < n; i++) {
+      const b = bytes[i];
+      if (b === 0) return true;
+      if (b < 9 || (b > 13 && b < 32 && b !== 27)) suspicious++;
+    }
+    return suspicious / (n || 1) > 0.3;
+  }
+
+  function setFile(name, bytes) {
+    currentName = name;
+    isBinary = looksBinary(bytes);
+    binaryBytes = bytes;
+    const text = new TextDecoder("utf-8").decode(bytes);
+    original = text;
+    baseline = text;
+    els.src.value = text;
+    lastApplied = text;
+    els.info.innerHTML = "<b>" + esc(name) + "</b> · " + formatSize(bytes.length) + (isBinary ? " · detected: binary (byte-level patches only)" : " · detected: text");
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    els.type.textContent = ext ? "." + ext : "unknown";
+    els.type.className = "badge ok";
+    log("Loaded " + name + " (" + formatSize(bytes.length) + ")" + (isBinary ? " — binary mode" : ""), "ok");
+    applyMods(true); // auto-apply existing mods
+  }
+
+  function readFile(file) {
+    const r = new FileReader();
+    r.onload = () => setFile(file.name, new Uint8Array(r.result));
+    r.onerror = () => log("Failed to read file.", "err");
+    r.readAsArrayBuffer(file);
+  }
+
+  els.drop.addEventListener("click", () => els.file.click());
+  els.file.addEventListener("change", (e) => { if (e.target.files[0]) readFile(e.target.files[0]); });
+  ["dragenter", "dragover"].forEach(ev => els.drop.addEventListener(ev, e => { e.preventDefault(); els.drop.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach(ev => els.drop.addEventListener(ev, e => { e.preventDefault(); els.drop.classList.remove("drag"); }));
+  els.drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+  // ---------- manual editing ----------
+  els.src.addEventListener("input", () => { /* edits are manual baseline */ });
+
+  $("btnReload").addEventListener("click", () => {
+    baseline = original;
+    log("Reset source to original file contents.", "warn");
+    applyMods(true);
+  });
+
+  $("btnCopySource").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(els.src.value); log("Source copied to clipboard.", "ok"); }
+    catch { log("Clipboard blocked by browser.", "err"); }
+  });
+
+  // ---------- download ----------
+  $("btnDownload").addEventListener("click", () => {
+    const blob = new Blob([els.src.value], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const dot = currentName.lastIndexOf(".");
+    a.download = dot > 0 ? currentName.slice(0, dot) + ".modded" + currentName.slice(dot) : currentName + ".modded";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    log("Downloaded " + a.download, "ok");
+  });
+
+  // ---------- mod management ----------
+  function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+  function formatSize(n){ if(n<1024)return n+" B"; if(n<1048576)return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(2)+" MB"; }
+
+  function addMod(m) {
+    m.id = uid++;
+    mods.push(m);
+    renderMods();
+    log("Added mod “" + m.name + "”", "ok");
+    applyMods(true);
+  }
+
+  $("btnAddMod").addEventListener("click", () => {
+    const name = els.name.value.trim() || ("Mod " + uid);
+    if (els.append.checked) {
+      if (!els.repl.value) { log("Append mod needs content in the “Replace with” box.", "err"); return; }
+      addMod({ name, type: "append", snippet: els.repl.value, enabled: true });
+    } else {
+      if (!els.find.value) { log("“Find” cannot be empty.", "err"); return; }
+      addMod({
+        name, type: "find", find: els.find.value, replace: els.repl.value,
+        mode: els.mode.value, glob: els.glob.checked, icase: els.icase.checked, enabled: true
+      });
+    }
+    els.name.value = els.find.value = els.repl.value = "";
+  });
+
+  function renderMods() {
+    els.modList.querySelectorAll(".mod-item").forEach(n => n.remove());
+    els.noMods.style.display = mods.length ? "none" : "block";
+    mods.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "mod-item";
+      const desc = m.type === "append"
+        ? "Injects " + formatSize(new Blob([m.snippet]).size) + " at end of file"
+        : (m.mode === "regex" ? "regex " : "") + JSON.stringify(m.find.length > 60 ? m.find.slice(0, 60) + "…" : m.find) + " → " + JSON.stringify(m.replace.length > 40 ? m.replace.slice(0, 40) + "…" : m.replace);
+      div.innerHTML =
+        '<div class="mod-head"><span class="mod-name">' + esc(m.name) + '</span>' +
+        '<label class="toggle"><input type="checkbox" ' + (m.enabled ? "checked" : "") + '><span class="slider"></span></label></div>' +
+        '<div class="mod-meta">' + esc(desc) + '</div>' +
+        '<div class="row"><span class="badge" data-role="status">—</span>' +
+        '<button class="secondary small" data-role="up">↑</button>' +
+        '<button class="secondary small" data-role="down">↓</button>' +
+        '<button class="danger small" data-role="del">Delete</button></div>';
+      div.querySelector('input[type=checkbox]').addEventListener("change", e => { m.enabled = e.target.checked; applyMods(true); });
+      div.querySelector('[data-role=del]').addEventListener("click", () => { mods = mods.filter(x => x.id !== m.id); renderMods(); applyMods(true); log("Deleted mod “" + m.name + "”", "warn"); });
+      div.querySelector('[data-role=up]').addEventListener("click", () => swap(m, -1));
+      div.querySelector('[data-role=down]').addEventListener("click", () => swap(m, 1));
+      els.modList.appendChild(div);
+    });
+  }
+
+  function swap(m, dir) {
+    const i = mods.indexOf(m), j = i + dir;
+    if (j < 0 || j >= mods.length) return;
+    mods.splice(i, 1); mods.splice(j, 0, m);
+    renderMods(); applyMods(true);
+  }
+
+  // ---------- applying ----------
+  function buildRegex(m) {
+    let src = m.mode === "regex" ? m.find : m.find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let flags = (m.glob ? "g" : "") + (m.icase ? "i" : "");
+    return new RegExp(src, flags);
+  }
+
+  function applyOne(text, m) {
+    if (m.type === "append") {
+      return text + "\n" + m.snippet + "\n";
+    }
+    if (m.mode === "regex") {
+      return text.replace(buildRegex(m), m.replace);
+    }
+    // plain text
+    if (m.glob) return text.split(m.find).join(m.replace);
+    const i = text.indexOf(m.find);
+    if (i === -1) return text;
+    return text.slice(0, i) + m.replace + text.slice(i + m.find.length);
+  }
+
+  function countMatches(text, m) {
+    if (m.type === "append") return 1;
+    if (m.mode === "regex") {
+      try { return (text.match(buildRegex(m)) || []).length; } catch { return -1; }
+    }
+    if (!m.find) return 0;
+    let c = 0, i = 0;
+    const hay = m.icase ? text.toLowerCase() : text, needle = m.icase ? m.find.toLowerCase() : m.find;
+    while ((i = hay.indexOf(needle, i)) !== -1) { c++; i += needle.length; if (!m.glob) break; }
+    return c;
+  }
+
+  // Deterministic pipeline: baseline (original + manual edits) → each enabled mod in order.
+  let baseline = "";        // what mods are applied ON TOP OF
+  let lastApplied = "";     // last programmatic output, to detect manual typing
+
+  function manualBase() {
+    // If the user typed in the textarea since our last programmatic update,
+    // their edit becomes the new baseline; otherwise keep the stored baseline.
+    if (els.src.value !== lastApplied) baseline = els.src.value;
+    return baseline;
+  }
+
+  function applyMods(silent) {
+    let totalHits = 0, problems = [];
+    const results = [];
+    let text = manualBase();
+    for (const m of mods) {
+      if (!m.enabled) { results.push([m, 0]); continue; }
+      const hits = countMatches(text, m);
+      if (hits === -1) { problems.push(m.name + ": invalid regex"); results.push([m, 0]); continue; }
+      if (hits === 0 && m.type === "find") problems.push(m.name + ": pattern not found");
+      text = applyOne(text, m);
+      totalHits += hits;
+      results.push([m, hits]);
+    }
+    els.src.value = text;
+    lastApplied = text;
+    // update badges
+    els.modList.querySelectorAll(".mod-item").forEach((node, idx) => {
+      const badge = node.querySelector('[data-role=status]');
+      const [m, hits] = results[idx] || [null, 0];
+      if (!m || !m.enabled) { badge.textContent = "off"; badge.className = "badge"; }
+      else if (hits > 0) { badge.textContent = hits + " match" + (hits > 1 ? "es" : ""); badge.className = "badge ok"; }
+      else { badge.textContent = "no match"; badge.className = "badge err"; }
+    });
+    if (!silent) {
+      if (problems.length) log("Applied with issues: " + problems.join("; "), "warn");
+      else log("Applied " + mods.filter(m=>m.enabled).length + " mod(s), " + totalHits + " replacement(s).", "ok");
+    }
+  }
+
+  $("btnApply").addEventListener("click", () => applyMods(false));
+
+  $("btnDiff").addEventListener("click", () => {
+    const a = original.split("\n"), b = els.src.value.split("\n");
+    const setA = new Map(); a.forEach((l,i)=>{ if(!setA.has(l)) setA.set(l,i); });
+    let added = 0, removed = 0;
+    const setB = new Set(b);
+    a.forEach(l => { if (!setB.has(l)) removed++; });
+    b.forEach(l => { if (!setA.has(l)) added++; });
+    log("Diff vs original: +" + added + " line(s), −" + removed + " line(s), size " + formatSize(new Blob([els.src.value]).size) + " (was " + formatSize(new Blob([original]).size) + ").", "ok");
+  });
+
+  // ---------- export / import mods ----------
+  $("btnExportMods").addEventListener("click", () => {
+    if (!mods.length) { log("Nothing to export.", "err"); return; }
+    const payload = { universalModder: 1, target: currentName, exported: new Date().toISOString(), mods: mods.map(m => { const c = {...m}; delete c.id; return c; }) };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = currentName.replace(/\.[^.]*$/, "") + ".umod.json";
+    a.click(); URL.revokeObjectURL(a.href);
+    log("Exported " + mods.length + " mod(s).", "ok");
+  });
+
+  $("btnImportMods").addEventListener("click", () => els.import.click());
+  els.import.addEventListener("change", e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const data = JSON.parse(r.result);
+        if (!Array.isArray(data.mods)) throw new Error("missing mods array");
+        let n = 0;
+        data.mods.forEach(m => {
+          if (m.type === "append" && m.snippet != null) { addMod({ name: m.name || "Imported", type: "append", snippet: m.snippet, enabled: !!m.enabled }); n++; }
+          else if (m.find != null) { addMod({ name: m.name || "Imported", type: "find", find: String(m.find), replace: String(m.replace ?? ""), mode: m.mode === "regex" ? "regex" : "plain", glob: !!m.glob, icase: !!m.icase, enabled: m.enabled !== false }); n++; }
+        });
+        log("Imported " + n + " mod(s) from " + f.name, "ok");
+      } catch (err) { log("Import failed: " + err.message, "err"); }
+    };
+    r.readAsText(f);
+    els.import.value = "";
+  });
+
+  $("btnClearMods").addEventListener("click", () => {
+    mods = []; renderMods(); baseline = original; applyMods(true); log("Cleared all mods.", "warn");
+  });
+
+  // ---------- presets ----------
+  document.querySelectorAll(".preset").forEach(btn => btn.addEventListener("click", () => {
+    const p = btn.dataset.preset;
+    els.append.checked = false;
+    if (p === "inject-script") {
+      els.name.value = "Inject script"; els.mode.value = "plain";
+      els.find.value = "</body>";
+      els.repl.value = "<script src=\"mymod.js\"><\/script>\n</body>";
+    } else if (p === "inject-style") {
+      els.name.value = "Inject styles"; els.mode.value = "plain";
+      els.find.value = "</head>";
+      els.repl.value = "<style>/* my mod */\nbody { filter: invert(1) hue-rotate(180deg); }\n</style>\n</head>";
+    } else if (p === "title") {
+      els.name.value = "Change title"; els.mode.value = "regex"; els.glob.checked = false;
+      els.find.value = "<title>[^<]*</title>";
+      els.repl.value = "<title>MODDED ✔</title>";
+    } else if (p === "remove-comment") {
+      els.name.value = "Strip single-line comments"; els.mode.value = "regex"; els.glob.checked = true;
+      els.find.value = "[ \\t]*//[^\\n]*"; els.repl.value = "";
+    }
+    log("Preset loaded — tweak the fields, then click “＋ Add mod”. Note: only meaningful for text files.", "warn");
+  }));
+
+  // ---------- demo ----------
+  $("btnDemo").addEventListener("click", () => {
+    const demo = [
+      "<!DOCTYPE html>", "<html><head><title>My Game</title></head>", "<body>",
+      "<h1>Welcome to Space Raiders!</h1>", "// difficulty settings", "var maxLives = 3;", "var enemySpeed = 2;", "var godMode = false;",
+      "<script>", "  function startGame(){ console.log('lives:', maxLives, 'speed:', enemySpeed); }", "  startGame();", "<\/script>",
+      "</body></html>"
+    ].join("\n");
+    setFile("demo-game.html", new TextEncoder().encode(demo));
+  });
+
+  renderMods();
+})();
+</script>
+</body>
+</html>
