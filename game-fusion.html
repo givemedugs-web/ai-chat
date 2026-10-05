@@ -86,6 +86,12 @@
   .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #2b3255; color: var(--dim); }
   .hintbox { font-size: 12px; color: var(--dim); background: #12162a; border-left: 3px solid var(--accent); padding: 8px 10px; border-radius: 0 8px 8px 0; margin-top: 8px; }
   .hiddenfile { display: none; }
+  .scanlist { max-height: 190px; overflow-y: auto; border: 1px solid #2b3255; border-radius: 8px; padding: 6px; margin-top: 8px; background: #12162a; }
+  .scanitem { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 12px; }
+  .scanitem:hover { background: rgba(124,92,255,.12); }
+  .scanitem .path { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+  .scanbar { height: 6px; background: #2b3255; border-radius: 4px; overflow: hidden; margin-top: 8px; display: none; }
+  .scanbar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s; }
   footer { max-width: 1280px; margin: 14px auto 0; color: #5a618a; font-size: 12px; text-align: center; }
 </style>
 </head>
@@ -152,6 +158,19 @@
         <input type="text" id="labelB" placeholder="Game B name" style="flex:1">
       </div>
     </div>
+
+    <div class="card">
+      <h2>🖥 Game Scanner — find games on your PC</h2>
+      <div class="row">
+        <button class="small" id="scanBtn">Scan a folder…</button>
+        <button class="small" id="scanQuickBtn">Quick scan common folders</button>
+        <span class="badge" id="scanBadge">not scanned</span>
+      </div>
+      <input type="file" id="scanDir" class="hiddenfile" webkitdirectory directory multiple>
+      <div class="scanbar" id="scanBar"><div id="scanFill"></div></div>
+      <div class="hintbox" style="margin-top:8px">Your browser can only read folders you explicitly pick (sandboxed for privacy) — "Scan a folder…" opens the OS picker; everything is scanned locally, nothing is uploaded. It looks for .html/.htm files that contain game signals (&lt;canvas&gt;, &lt;script&gt;, score/game keywords), skipping node_modules and huge files.</div>
+      <div id="scanResults"></div>
+    </div>
   </div>
 
   <!-- RIGHT COLUMN: stage -->
@@ -164,6 +183,10 @@
         <span style="flex:1"></span>
         <button class="small" id="copyBtn">Copy fused HTML</button>
         <button class="small" id="dlBtn">Download fused game</button>
+        <select id="dlFormat" title="Download format">
+          <option value="html">HTML</option>
+          <option value="zip">ZIP</option>
+        </select>
       </div>
       <iframe id="stage" title="Fused game stage" sandbox="allow-scripts allow-pointer-lock"></iframe>
     </div>
@@ -344,6 +367,53 @@ $("fuseBtn").addEventListener("click", () => {
   }
 });
 
+/* ============ ZIP writer (stored = no compression, CRC32) ============ */
+const _crcTable = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = _crcTable[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(entries) { // entries: [{name, data(Uint8Array)}]
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  for (const e of entries) {
+    const nameBytes = enc.encode(e.name), data = e.data, crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true);
+    lh.setUint16(26, nameBytes.length, true);
+    parts.push(new Uint8Array(lh.buffer), nameBytes, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(10, 0, true); ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true);
+    ch.setUint16(28, nameBytes.length, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const cdSize = central.reduce((s, u) => s + u.length, 0);
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true);
+  eocd.setUint16(8, entries.length, true); eocd.setUint16(10, entries.length, true);
+  eocd.setUint32(12, cdSize, true); eocd.setUint32(16, offset, true);
+  const all = parts.concat(central, [new Uint8Array(eocd.buffer)]);
+  return new Blob(all, { type: "application/zip" });
+}
+
 /* ============ export ============ */
 $("copyBtn").addEventListener("click", () => {
   if (!lastFused) { log("Nothing to copy — hit 'Fuse & Play' first.", "err"); return; }
@@ -351,15 +421,149 @@ $("copyBtn").addEventListener("click", () => {
     .then(() => log("Fused HTML copied to clipboard.", "ok"))
     .catch(() => { const t = $("remixCode"); log("Clipboard blocked by browser — use Download instead.", "warn"); });
 });
-$("dlBtn").addEventListener("click", () => {
-  if (!lastFused) { log("Nothing to download — hit 'Fuse & Play' first.", "err"); return; }
-  const blob = new Blob([lastFused], { type: "text/html" });
+function downloadBlob(blob, filename) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "fused-game.html";
+  a.download = filename;
   a.click();
-  URL.revokeObjectURL(a.href);
-  log("Downloaded fused-game.html — open it anywhere to play!", "ok");
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$("dlBtn").addEventListener("click", () => {
+  if (!lastFused) { log("Nothing to download — hit 'Fuse & Play' first.", "err"); return; }
+  const enc = new TextEncoder();
+  if ($("dlFormat").value === "zip") {
+    const files = [
+      { name: "fused-game.html", data: enc.encode(lastFused) },
+      { name: "README.txt", data: enc.encode(
+        "Game Fusion package\n=====================\n" +
+        "- fused-game.html : the combined game. Open it in any browser to play.\n" +
+        (state.a && state.b ? "- source-a.html   : Game A as loaded (" + state.a.name + ")\n- source-b.html   : Game B as loaded (" + state.b.name + ")\n" : "") +
+        "Made with Game Fusion (universal-modder family). 100% offline.\n") },
+    ];
+    if (state.a) files.push({ name: "source-a.html", data: enc.encode(state.a.html) });
+    if (state.b) files.push({ name: "source-b.html", data: enc.encode(state.b.html) });
+    downloadBlob(makeZip(files), "fused-game.zip");
+    log("Downloaded fused-game.zip (" + files.length + " files, stored/CRC32).", "ok");
+  } else {
+    downloadBlob(new Blob([lastFused], { type: "text/html" }), "fused-game.html");
+    log("Downloaded fused-game.html — open it anywhere to play!", "ok");
+  }
+});
+
+/* ============ game scanner (File System API / folder picker) ============ */
+const SKIP_DIRS = /(^|[\\/])(node_modules|\.git|vendor|dist-cache|[Uu]nderstand|[Ll]ibrary|[Ww]indows|[Pp]rogram ?Files)/;
+const GAME_RE = /(<canvas|requestAnimationFrame|setInterval|\bgame\b|\bscore\b|\bplayer\b|\blevel\b|\bhighscore\b)/i;
+async function listHtmlInDir(dirHandle) {
+  const out = [];
+  async function walk(handle, path, depth) {
+    if (depth > 6) return;
+    for await (const [name, h] of handle.entries()) {
+      if (h.kind === "directory") {
+        if (SKIP_DIRS.test(path + "/" + name)) continue;
+        try { await walk(h, path + "/" + name, depth + 1); } catch (e) { /* permission-denied subfolder, skip */ }
+      } else if (/\.html?$/i.test(name)) {
+        out.push({ path: path + "/" + name, handle: h, name });
+      }
+    }
+  }
+  await walk(dirHandle, dirHandle.name || "", 0);
+  return out;
+}
+async function scanInto(candidates, rootLabel) {
+  const bar = $("scanBar"), fill = $("scanFill");
+  bar.style.display = "block"; fill.style.width = "0%";
+  const results = [];
+  let done = 0;
+  for (const c of candidates) {
+    done++;
+    fill.style.width = Math.round(done / Math.max(1, candidates.length) * 100) + "%";
+    try {
+      const fh = await c.handle.getFile();          // FileSystemFileHandle
+      if (!fh) continue;
+      const f = await fh.getFile();                  // File
+      if (!f || f.size > 5 * 1024 * 1024) continue;  // skip huge files
+      const text = await f.text();
+      if (GAME_RE.test(text)) results.push({ file: f, path: c.path });
+    } catch (e) { /* unreadable file, ignore */ }
+  }
+  bar.style.display = "none";
+  renderScanResults(results, rootLabel);
+}
+function renderScanResults(results, rootLabel) {
+  const box = $("scanResults");
+  box.innerHTML = "";
+  $("scanBadge").textContent = results.length + " game(s) found";
+  if (!results.length) {
+    const d = document.createElement("div");
+    d.className = "hintbox"; d.textContent = "No HTML games found in " + rootLabel + ". Try your Downloads/Games folder.";
+    box.appendChild(d); log("Scan of '" + rootLabel + "' finished: 0 games.", "warn"); return;
+  }
+  const list = document.createElement("div"); list.className = "scanlist";
+  results.slice(0, 200).forEach(r => {
+    const row = document.createElement("div"); row.className = "scanitem";
+    const nm = document.createElement("span"); nm.textContent = r.file.name; nm.style.flex = "1";
+    const pth = document.createElement("span"); pth.className = "path"; pth.title = r.path; pth.textContent = r.path;
+    const bA = document.createElement("button"); bA.className = "small"; bA.textContent = "→ A";
+    const bB = document.createElement("button"); bB.className = "small"; bB.textContent = "→ B";
+    bA.onclick = () => loadScannedGame(r, "a");
+    bB.onclick = () => loadScannedGame(r, "b");
+    row.append(nm, pth, bA, bB); list.appendChild(row);
+  });
+  box.appendChild(list);
+  log("Scan of '" + rootLabel + "' finished: found " + results.length + " candidate game(s).", "ok");
+}
+function loadScannedGame(r, slot) {
+  r.file.text().then(html => {
+    state[slot] = { name: r.file.name, html };
+    const d = slot === "a" ? ["dropA","badgeA"] : ["dropB","badgeB"];
+    $(d[0]).classList.add("loaded");
+    $(d[1]).textContent = r.file.name + " (" + Math.round(r.file.size / 1024) + " KB)";
+    log("Loaded Game " + (slot === "a" ? "A" : "B") + " from scan: " + r.path, "ok");
+  }).catch(() => log("Could not read " + r.path, "err"));
+}
+$("scanBtn").addEventListener("click", async () => {
+  if (window.showDirectoryPicker) {
+    try {
+      const dir = await window.showDirectoryPicker();
+      log("Scanning folder '" + dir.name + "' recursively…", "warn");
+      const cands = await listHtmlInDir(dir);
+      scanInto(cands, dir.name);
+    } catch (e) {
+      if (e.name !== "AbortError") log("Folder scan failed: " + e.message, "err");
+    }
+  } else {
+    $("scanDir").click(); // fallback: directory input
+  }
+});
+$("scanDir").addEventListener("change", async () => {
+  const files = Array.from($("scanDir").files || []);
+  if (!files.length) return;
+  const cands = files.filter(f => /\.html?$/i.test(f.name) && f.size <= 5 * 1024 * 1024 && !SKIP_DIRS.test(f.webkitRelativePath));
+  $("scanBadge").textContent = "scanning " + cands.length + " file(s)…";
+  const results = [];
+  for (const f of cands) {
+    try { if (GAME_RE.test(await f.text())) results.push({ file: f, path: f.webkitRelativePath || f.name }); } catch (e) {}
+  }
+  renderScanResults(results, ($("scanDir").files[0].webkitRelativePath || "").split("/")[0] || "picked folder");
+  $("scanDir").value = "";
+});
+$("scanQuickBtn").addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) { log("Quick scan needs Chrome/Edge (File System API). Use 'Scan a folder…' instead.", "err"); return; }
+  const guesses = ["Downloads", "Documents", "Games", "My Games", "Desktop"];
+  let scanned = 0;
+  for (const g of guesses) {
+    try {
+      const root = await window.showDirectoryPicker({ id: "quick-" + g, startIn: g.toLowerCase() });
+      log("Trying common folder '" + root.name + "'…", "warn");
+      const cands = await listHtmlInDir(root);
+      await scanInto(cands, root.name);
+      scanned++;
+      break; // one successful quick pick is enough; picker already guided the user
+    } catch (e) {
+      if (e.name === "AbortError") { log("Quick scan cancelled.", "warn"); return; }
+    }
+  }
+  if (!scanned) log("Quick scan found no accessible common folders — use 'Scan a folder…'.", "err");
 });
 
 /* ============ demo games (self-contained mini-games) ============ */

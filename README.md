@@ -30,4 +30,5 @@ Features:
   - 🧪 **Script Remix** (advanced) — inject Game B's JavaScript (or your own custom script) directly into Game A's page so both scripts share one world
 - Each game runs in a sandboxed iframe so they can't crash each other (except in Remix mode, by design)
 - Custom labels for each game; live stage preview with activity log
-- Copy the fused HTML to clipboard or download it as a standalone `fused-game.html` you can play/share anywhere
+- Copy the fused HTML to clipboard, or download it as a standalone `fused-game.html` — **or as a ZIP package** (`fused-game.zip` containing the fused game, both original source games, and a README) via the format dropdown
+- 🖥 **Game Scanner** — scan a folder on your PC (browser sandbox: you pick the folder, nothing is uploaded) to auto-discover HTML game files by looking for game signals (`<canvas>`, `requestAnimationFrame`, score/game keywords); load any hit straight into slot A or B with one click. "Quick scan" pre-points the picker at common folders (Downloads/Documents/Games/Desktop). Falls back to the directory-picker input on browsers without the File System API. You can play/share the output anywhere
