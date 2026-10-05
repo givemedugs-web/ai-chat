@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Fusion — Combine Two Games Into One</title>
+<style>
+  :root {
+    --bg: #0f1220;
+    --panel: #191e33;
+    --panel2: #222845;
+    --accent: #7c5cff;
+    --accent2: #ff5c8a;
+    --ok: #3ddc97;
+    --warn: #ffb347;
+    --text: #e8eaf6;
+    --dim: #9aa0c3;
+    --mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 20% -10%, #232a52 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, Arial, sans-serif;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  header { max-width: 1280px; margin: 0 auto 18px; }
+  h1 {
+    font-size: 28px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: inline-block;
+  }
+  .sub { color: var(--dim); margin-top: 4px; font-size: 14px; }
+  .wrap { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 420px 1fr; gap: 18px; }
+  @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid #2b3255; border-radius: 14px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--dim); }
+  .drop {
+    border: 2px dashed #3a4370; border-radius: 10px; padding: 14px; text-align: center;
+    cursor: pointer; transition: .15s; color: var(--dim); font-size: 13px; margin-bottom: 10px;
+  }
+  .drop:hover, .drop.dragover { border-color: var(--accent); color: var(--text); background: rgba(124,92,255,.08); }
+  .drop.loaded { border-color: var(--ok); color: var(--ok); border-style: solid; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid #3a4370;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border: none; color: #fff; font-weight: 600; padding: 10px 18px;
+  }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  select, input[type=text] {
+    background: #12162a; color: var(--text); border: 1px solid #3a4370;
+    border-radius: 8px; padding: 7px 10px; font-size: 13px;
+  }
+  .mode-item { border: 1px solid #2b3255; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .mode-item.active { border-color: var(--accent); background: rgba(124,92,255,.08); }
+  .mode-item label { cursor: pointer; font-weight: 600; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+  .mode-item p { color: var(--dim); font-size: 12px; margin: 6px 0 0 24px; }
+  .mode-opts { margin: 8px 0 0 24px; display: none; }
+  .mode-item.active .mode-opts { display: block; }
+  .right-col { display: flex; flex-direction: column; }
+  .stagebar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .tabbtn.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  iframe#stage {
+    width: 100%; height: 620px; border: 1px solid #2b3255; border-radius: 12px; background: #fff;
+  }
+  textarea.code {
+    width: 100%; height: 150px; background: #12162a; color: #cfe3ff; border: 1px solid #3a4370;
+    border-radius: 10px; font-family: var(--mono); font-size: 12px; padding: 10px; resize: vertical;
+  }
+  #log {
+    background: #0b0e1c; border: 1px solid #2b3255; border-radius: 10px; padding: 10px;
+    font-family: var(--mono); font-size: 11.5px; height: 140px; overflow-y: auto; color: #b9c4ee;
+    white-space: pre-wrap;
+  }
+  #log .ok { color: var(--ok); } #log .err { color: #ff7b7b; } #log .warn { color: var(--warn); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #2b3255; color: var(--dim); }
+  .hintbox { font-size: 12px; color: var(--dim); background: #12162a; border-left: 3px solid var(--accent); padding: 8px 10px; border-radius: 0 8px 8px 0; margin-top: 8px; }
+  .hiddenfile { display: none; }
+  footer { max-width: 1280px; margin: 14px auto 0; color: #5a618a; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Game Fusion</h1>
+  <div class="sub">Combine two games into one playable fusion — everything runs locally in your browser. Your files never leave this device.</div>
+</header>
+
+<div class="wrap">
+  <!-- LEFT COLUMN: sources + modes -->
+  <div>
+    <div class="card">
+      <h2>Game A</h2>
+      <div class="drop" id="dropA">Drag &amp; drop an HTML game file here, or click to browse<br><span class="badge" id="badgeA">empty</span></div>
+      <input type="file" class="hiddenfile" id="fileA" accept=".html,.htm,.txt">
+      <div class="row" style="margin-top:6px">
+        <button class="small" id="demoA">Load demo Game A (Snake)</button>
+        <button class="small" id="clearA">Clear</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Game B</h2>
+      <div class="drop" id="dropB">Drag &amp; drop an HTML game file here, or click to browse<br><span class="badge" id="badgeB">empty</span></div>
+      <input type="file" class="hiddenfile" id="fileB" accept=".html,.htm,.txt">
+      <div class="row" style="margin-top:6px">
+        <button class="small" id="demoB">Load demo Game B (Click Frenzy)</button>
+        <button class="small" id="clearB">Clear</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fusion Mode</h2>
+      <div class="mode-item active" data-mode="split">
+        <label><input type="radio" name="mode" value="split" checked> 🪟 Split-screen side by side</label>
+        <p>Both games run next to each other in one page. Best when the two games use different controls (e.g. mouse vs. keyboard).</p>
+        <div class="mode-opts">
+          <div class="row">
+            <span style="font-size:12px;color:var(--dim)">Divider:</span>
+            <input type="range" id="splitRatio" min="20" max="80" value="50" style="flex:1">
+            <span class="badge" id="splitRatioVal">50 / 50</span>
+          </div>
+        </div>
+      </div>
+      <div class="mode-item" data-mode="tabs">
+        <label><input type="radio" name="mode" value="tabs"> 🗂 Tabbed switcher</label>
+        <p>One window with tabs to flip instantly between Game A and Game B. Only the visible tab keeps running.</p>
+      </div>
+      <div class="mode-item" data-mode="remix">
+        <label><input type="radio" name="mode" value="remix"> 🧪 Script Remix (advanced)</label>
+        <p>Inject Game B's JavaScript code into Game A's page so both scripts share one world. Try: paste a small script below that changes Game A (e.g. <code>document.body.style.background='black'</code> or overrides a variable).</p>
+        <div class="mode-opts">
+          <textarea class="code" id="remixCode" placeholder="JavaScript from / for Game B to inject into Game A…"></textarea>
+        </div>
+      </div>
+      <div class="hintbox">Tip: any single-file HTML game works (Flappy clones, 2048, breakout…). Iframes keep each game sandboxed so they can't crash each other — except in Remix mode, where you're the mad scientist.</div>
+    </div>
+
+    <div class="card">
+      <h2>Custom Labels (optional)</h2>
+      <div class="row">
+        <input type="text" id="labelA" placeholder="Game A name" style="flex:1">
+        <input type="text" id="labelB" placeholder="Game B name" style="flex:1">
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: stage -->
+  <div class="right-col">
+    <div class="card" style="flex:1">
+      <div class="stagebar">
+        <button class="primary" id="fuseBtn">🔥 Fuse &amp; Play</button>
+        <button id="tabsInStage" style="display:none"></button>
+        <span id="stageInfo" class="badge">no fusion yet</span>
+        <span style="flex:1"></span>
+        <button class="small" id="copyBtn">Copy fused HTML</button>
+        <button class="small" id="dlBtn">Download fused game</button>
+      </div>
+      <iframe id="stage" title="Fused game stage" sandbox="allow-scripts allow-pointer-lock"></iframe>
+    </div>
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<footer>Game Fusion • part of the Universal Modder family • 100% offline, single file</footer>
+
+<script>
+"use strict";
+/* ============ state ============ */
+const state = { a: null, b: null }; // {name, html}
+let currentMode = "split";
+let lastFused = "";
+
+/* ============ helpers ============ */
+const $ = id => document.getElementById(id);
+function log(msg, cls) {
+  const el = $("log");
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ============ file loading ============ */
+function bindDrop(dropId, fileId, badgeId, slot, defaultName) {
+  const drop = $(dropId), file = $(fileId), badge = $(badgeId);
+  drop.addEventListener("click", () => file.click());
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("dragover"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+  drop.addEventListener("drop", e => {
+    e.preventDefault(); drop.classList.remove("dragover");
+    if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+  file.addEventListener("change", () => { if (file.files[0]) readFile(file.files[0]); });
+  function readFile(f) {
+    if (!/\.(html?|txt)$/i.test(f.name)) { log("Rejected '" + f.name + "' — please use an .html game file.", "err"); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      state[slot] = { name: f.name, html: String(r.result), label: defaultName };
+      drop.classList.add("loaded");
+      badge.textContent = f.name + " (" + Math.round(f.size / 1024) + " KB)";
+      log("Loaded Game " + (slot === "a" ? "A" : "B") + ": " + f.name, "ok");
+    };
+    r.onerror = () => log("Failed to read " + f.name, "err");
+    r.readAsText(f);
+  }
+}
+bindDrop("dropA", "fileA", "badgeA", "a", "Game A");
+bindDrop("dropB", "fileB", "badgeB", "b", "Game B");
+
+function clearSlot(slot) {
+  state[slot] = null;
+  const d = slot === "a" ? ["dropA","badgeA","fileA"] : ["dropB","badgeB","fileB"];
+  $(d[0]).classList.remove("loaded");
+  $(d[1]).textContent = "empty";
+  $(d[2]).value = "";
+  log("Cleared Game " + (slot === "a" ? "A" : "B"), "warn");
+}
+$("clearA").onclick = () => clearSlot("a");
+$("clearB").onclick = () => clearSlot("b");
+
+/* ============ mode selection ============ */
+document.querySelectorAll(".mode-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".mode-item").forEach(i => i.classList.remove("active"));
+    item.classList.add("active");
+    item.querySelector("input[type=radio]").checked = true;
+    currentMode = item.dataset.mode;
+  });
+});
+$("splitRatio").addEventListener("input", e => {
+  $("splitRatioVal").textContent = e.target.value + " / " + (100 - e.target.value);
+});
+
+/* ============ fusion builders ============ */
+function srcdocWrap(html) {
+  // full game HTML goes into iframe srcdoc attribute -> must escape quotes
+  return html.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+function buildSplit(a, b, ratio, la, lb) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(la)} + ${esc(lb)}</title>
+<style>html,body{margin:0;height:100%;background:#101018;font-family:system-ui,sans-serif}
+.wrap{display:flex;height:100vh;gap:4px;padding:4px;box-sizing:border-box}
+.pane{position:relative;border-radius:10px;overflow:hidden;background:#1b1b28;display:flex;flex-direction:column}
+.pane .tag{position:absolute;top:6px;left:6px;z-index:5;background:rgba(0,0,0,.55);color:#fff;
+padding:3px 10px;border-radius:20px;font-size:12px;pointer-events:none}
+.pane iframe{width:100%;height:100%;border:0;background:#fff;flex:1}</style></head>
+<body><div class="wrap">
+<div class="pane" style="flex:${ratio}"><span class="tag">${esc(la)}</span>
+<iframe srcdoc="${srcdocWrap(a)}" sandbox="allow-scripts allow-pointer-lock"></iframe></div>
+<div class="pane" style="flex:${100-ratio}"><span class="tag">${esc(lb)}</span>
+<iframe srcdoc="${srcdocWrap(b)}" sandbox="allow-scripts allow-pointer-lock"></iframe></div>
+</div></body></html>`;
+}
+function buildTabs(a, b, la, lb) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(la)} + ${esc(lb)}</title>
+<style>html,body{margin:0;height:100%;background:#101018;font-family:system-ui,sans-serif}
+.tabs{display:flex;gap:6px;padding:8px}
+.tabs button{padding:8px 22px;border:0;border-radius:8px 8px 0 0;background:#23233a;color:#aab;cursor:pointer;font-size:14px}
+.tabs button.on{background:#7c5cff;color:#fff;font-weight:700}
+iframe{width:calc(100% - 16px);height:calc(100vh - 66px);margin:0 8px 8px;border:0;border-radius:0 10px 10px 10px;background:#fff;display:none}
+iframe.show{display:block}</style></head>
+<body><div class="tabs">
+<button id="ta" class="on">${esc(la)}</button><button id="tb">${esc(lb)}</button></div>
+<iframe id="fa" class="show" srcdoc="${srcdocWrap(a)}" sandbox="allow-scripts allow-pointer-lock"></iframe>
+<iframe id="fb" srcdoc="${srcdocWrap(b)}" sandbox="allow-scripts allow-pointer-lock"></iframe>
+<script>
+var ta=document.getElementById("ta"),tb=document.getElementById("tb"),
+fa=document.getElementById("fa"),fb=document.getElementById("fb");
+ta.onclick=function(){ta.classList.add("on");tb.classList.remove("on");fa.classList.add("show");fb.classList.remove("show");};
+tb.onclick=function(){tb.classList.add("on");ta.classList.remove("on");fb.classList.add("show");fa.classList.remove("show");};
+<\/script></body></html>`;
+}
+function extractScripts(html) {
+  const out = [];
+  const closer = "<" + "/script>";
+  const lower = html.toLowerCase();
+  let pos = 0;
+  while (true) {
+    const open = lower.indexOf("<script", pos);
+    if (open < 0) break;
+    const openEnd = lower.indexOf(">", open);
+    if (openEnd < 0) break;
+    const close = lower.indexOf(closer, openEnd + 1);
+    if (close < 0) break;
+    const attrs = lower.slice(open, openEnd);
+    if (!attrs.includes("src=")) {
+      const code = html.slice(openEnd + 1, close).trim();
+      if (code && !/type\s*=\s*["']?(application\/(json|ld\+?json)|text\/(template|html))/.test(attrs)) out.push(code);
+    }
+    pos = close + closer.length;
+  }
+  return out;
+}
+function buildRemix(baseHtml, injectCode, la, lb) {
+  const closeTag = "</body>";
+  const snippet = "<!-- injected by Game Fusion from " + esc(lb) + " -->\n<script>\n(function(){\ntry{\n"
+    + injectCode + "\n}catch(err){document.title='Remix error: '+err.message;}\n})();\n<\/script>\n";
+  const idx = baseHtml.toLowerCase().lastIndexOf(closeTag);
+  if (idx >= 0) return baseHtml.slice(0, idx) + snippet + baseHtml.slice(idx);
+  return baseHtml + "\n" + snippet;
+}
+
+/* ============ fuse action ============ */
+$("fuseBtn").addEventListener("click", () => {
+  if (!state.a || !state.b) { log("Load BOTH Game A and Game B first (or use the demo buttons).", "err"); return; }
+  const la = $("labelA").value.trim() || state.a.name;
+  const lb = $("labelB").value.trim() || state.b.name;
+  let out = "";
+  try {
+    if (currentMode === "split") {
+      out = buildSplit(state.a.html, state.b.html, parseInt($("splitRatio").value, 10), la, lb);
+      log("Fused in split-screen mode: " + la + " | " + lb, "ok");
+    } else if (currentMode === "tabs") {
+      out = buildTabs(state.a.html, state.b.html, la, lb);
+      log("Fused in tabbed mode: " + la + " / " + lb, "ok");
+    } else if (currentMode === "remix") {
+      const userCode = $("remixCode").value.trim();
+      const bScripts = extractScripts(state.b.html);
+      const code = userCode ? userCode : bScripts.join("\n;\n");
+      if (!code) { log("Remix mode: Game B has no inline <script> blocks and the remix box is empty.", "err"); return; }
+      out = buildRemix(state.a.html, code, la, lb);
+      log("Remixed: injected " + (userCode ? "custom script" : bScripts.length + " script block(s) from " + lb) + " into " + la, "ok");
+    }
+    lastFused = out;
+    $("stage").srcdoc = out;
+    $("stageInfo").textContent = currentMode + " • " + Math.round(out.length / 1024) + " KB";
+  } catch (e) {
+    log("Fusion failed: " + e.message, "err");
+  }
+});
+
+/* ============ export ============ */
+$("copyBtn").addEventListener("click", () => {
+  if (!lastFused) { log("Nothing to copy — hit 'Fuse & Play' first.", "err"); return; }
+  (navigator.clipboard ? navigator.clipboard.writeText(lastFused) : Promise.reject())
+    .then(() => log("Fused HTML copied to clipboard.", "ok"))
+    .catch(() => { const t = $("remixCode"); log("Clipboard blocked by browser — use Download instead.", "warn"); });
+});
+$("dlBtn").addEventListener("click", () => {
+  if (!lastFused) { log("Nothing to download — hit 'Fuse & Play' first.", "err"); return; }
+  const blob = new Blob([lastFused], { type: "text/html" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "fused-game.html";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log("Downloaded fused-game.html — open it anywhere to play!", "ok");
+});
+
+/* ============ demo games (self-contained mini-games) ============ */
+const DEMO_A = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Snake</title>
+<style>body{margin:0;background:#0c1220;color:#cfe3ff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh}
+h3{margin:4px}canvas{border:2px solid #2b4a7a;border-radius:8px;background:#081018}
+p{font-size:12px;color:#7f96c0;margin:6px}</style></head><body>
+<h3>🐍 Snake</h3><canvas id="c" width="300" height="300"></canvas><p>Arrow keys to move. Eat, don't bite yourself!</p>
+<script>
+var g=c.getContext("2d"),N=15,S=20,x=7,y=7,dx=0,dy=0,fx=3,fy=3,len=4,dead=false;
+function tick(){if(dead)return;
+ x+=dx;y+=dy;
+ if(x<0||y<0||x>=N||y>=N||len>4){for(var i=0;i<cells&&i<len-1;i++){} }
+ if(x<0||y<0||x>=N||y>=N){dead=true;}
+ for(var i=0;i<body.length;i++)if(body[i].x===x&&body[i].y===y)dead=true;
+ body.unshift({x:x,y:y});
+ if(x===fx&&y===fy){len++;fx=Math.floor(Math.random()*N);fy=Math.floor(Math.random()*N);}
+ while(body.length>len)body.pop();
+ draw();}
+var body=[{x:7,y:7}];
+function draw(){g.fillStyle="#081018";g.fillRect(0,0,300,300);
+ g.fillStyle="#ff5c8a";g.fillRect(fx*S+2,fy*S+2,S-4,S-4);
+ g.fillStyle="#3ddc97";body.forEach(function(p,i){g.globalAlpha=1-i*0.02;g.fillRect(p.x*S+1,p.y*S+1,S-2,S-2);});
+ g.globalAlpha=1;
+ if(dead){g.fillStyle="#fff";g.font="22px system-ui";g.fillText("GAME OVER",60,150);g.font="12px system-ui";g.fillText("press space",105,172);}}
+function reset(){x=y=7;dx=dy=0;body=[{x:7,y:7}];len=4;dead=false;draw();}
+addEventListener("keydown",function(e){
+ if(e.key===" "&&dead){reset();return;}
+ var m={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]}[e.key];
+ if(m){if(dx!==0||dy!==0){if(-m[0]===dx&&-m[1]===dy)return;}dx=m[0];dy=m[1];e.preventDefault();}});
+setInterval(tick,120);draw();
+<\/script></body></html>`;
+
+const DEMO_B = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Click Frenzy</title>
+<style>body{margin:0;background:#160c20;color:#ffd9ec;font-family:system-ui;text-align:center;height:100vh;overflow:hidden}
+h3{margin:8px}#score,#time{font-size:14px}#target{position:absolute;width:56px;height:56px;border-radius:50%;
+background:radial-gradient(circle at 30% 30%,#ff9ec2,#ff2f7b);cursor:pointer;top:120px;left:120px;box-shadow:0 0 18px #ff2f7b80}</style></head><body>
+<h3>🎯 Click Frenzy</h3><div id="score">Score: 0</div><div id="time">Time: 20s</div>
+<div id="target"></div>
+<script>
+var sc=0,t=20,on=true,el=document.getElementById("target"),se=document.getElementById("score"),te=document.getElementById("time");
+function move(){el.style.left=(Math.random()*(innerWidth-70)+5)+"px";el.style.top=(Math.random()*(innerHeight-140)+80)+"px";}
+el.addEventListener("pointerdown",function(){if(!on)return;sc++;se.textContent="Score: "+sc;move();});
+setInterval(function(){if(on){t--;te.textContent="Time: "+t+"s";if(t<=0){on=false;el.style.display="none";te.textContent="⏱ Done! Final score: "+sc;}}},1000);
+move();
+<\/script></body></html>`;
+
+$("demoA").addEventListener("click", () => {
+  state.a = { name: "demo-snake.html", html: DEMO_A };
+  $("dropA").classList.add("loaded");
+  $("badgeA").textContent = "demo-snake.html (built-in)";
+  log("Loaded built-in demo Game A: Snake", "ok");
+});
+$("demoB").addEventListener("click", () => {
+  state.b = { name: "demo-clickfrenzy.html", html: DEMO_B };
+  $("dropB").classList.add("loaded");
+  $("badgeB").textContent = "demo-clickfrenzy.html (built-in)";
+  log("Loaded built-in demo Game B: Click Frenzy", "ok");
+});
+
+log("Welcome to Game Fusion! Load two HTML games (or click both demo buttons) and press 🔥 Fuse & Play.", "ok");
+</script>
+</body>
+</html>
